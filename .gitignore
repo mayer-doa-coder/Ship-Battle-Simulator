@@ -1,0 +1,17 @@
+# Generated CMake output
+build/
+
+# Visual Studio and VS Code local state
+.vs/
+*.user
+CMakeUserPresets.json
+
+# Compiled files
+*.exe
+*.pdb
+*.ilk
+*.obj
+*.lib
+
+# The vendored GLFW library is source material for this repository.
+!external/glfw/lib-vc2022/*.lib
