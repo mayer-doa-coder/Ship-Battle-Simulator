@@ -2,7 +2,7 @@
 
 This is the step-by-step teaching version of `Broadside`. It will eventually demonstrate the same naval battle, but every phase must stay small enough to explain, modify, and demonstrate independently.
 
-## Current progress: Phase 0 only
+## Current progress: Phase 1
 
 The repository currently contains only the OpenGL foundation:
 
@@ -11,7 +11,9 @@ The repository currently contains only the OpenGL foundation:
 - GLFW 3.5.1 for the window and keyboard input;
 - GLAD for loading OpenGL functions;
 - GLM 1.0.3 for graphics mathematics;
-- a resizable clear-colour window that closes with `ESC`.
+- a resizable clear-colour window that closes with `ESC`;
+- a structured render loop with separate input, update, render, and timing jobs;
+- frame time and FPS reporting.
 
 There are deliberately no ships, shaders, meshes, transformations, animations, cannons, people, or environment modes yet.
 
@@ -26,7 +28,7 @@ cmake --build build --config Release
 
 Run `build/Release/ship_battle_simulator.exe`, or use `Shift+F5` in VS Code.
 
-The healthy startup output lists the OpenGL version, GLSL version, and renderer. A dark blue window should remain open until `ESC` is pressed.
+The healthy startup output lists the OpenGL version, GLSL version, and renderer. A dark blue window should remain open until `ESC` is pressed. The console prints a frame-time and FPS report approximately once per second.
 
 ## Why each library exists
 
@@ -52,7 +54,7 @@ These are support libraries, not a game engine. Scene construction, transformati
 ## Planned phase order
 
 1. OpenGL window and libraries — **complete**.
-2. Stable render loop and frame time.
+2. Stable render loop and frame time — **complete**.
 3. First shader and triangle.
 4. Model, view, and projection transformations.
 5. Reusable primitive meshes.

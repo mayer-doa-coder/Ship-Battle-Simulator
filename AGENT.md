@@ -1,10 +1,10 @@
 # AGENT.md - Ship Battle Simulator
 
-This repository is the incremental teaching build. The current source of truth is [README.md](README.md), and the current completed checkpoint is documented in [docs/PHASE_0_EXPLANATION.md](docs/PHASE_0_EXPLANATION.md).
+This repository is the incremental teaching build. The current source of truth is [README.md](README.md), and the current completed checkpoint is documented in [docs/PHASE_1_EXPLANATION.md](docs/PHASE_1_EXPLANATION.md).
 
 ## Current phase boundary
 
-Phase 0 is the only implemented phase. Do not add a triangle, shader, mesh, ship, animation, or gameplay feature unless the student explicitly asks to begin the next phase.
+Phase 1 is the latest implemented phase. Do not add a triangle, shader, mesh, ship, animation, or gameplay feature unless the student explicitly asks to begin the next phase.
 
 ## Permanent project requirements
 
@@ -31,6 +31,6 @@ The finished project will contain:
 
 These requirements are future phases, not permission to implement them all at once.
 
-## Phase 0 checkpoint
+## Phase 1 checkpoint
 
-Phase 0 is complete only when the project configures, builds, opens a dark-blue OpenGL window, prints the OpenGL/GLSL/renderer information, resizes correctly, and closes with `ESC`.
+Phase 1 is complete only when the project configures, builds, opens a dark-blue OpenGL window, reports sensible frame timing approximately once per second, remains responsive, resizes correctly, and closes normally. Input, update, render, and reporting must remain separate and understandable.
