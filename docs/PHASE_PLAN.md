@@ -30,10 +30,12 @@ Phase 52 is now Phase 66.
 | 4 | `uniform mat4 uModel` built by `glm::translate` from `sinf(now)`, first use of `setMat4` | [PHASE_4_EXPLANATION.md](PHASE_4_EXPLANATION.md) |
 | 5 | `glm::rotate` about Z from `now`, joined to the slide as `slide * spin`; the turn is about the origin | [PHASE_5_EXPLANATION.md](PHASE_5_EXPLANATION.md) |
 | 6 | `glm::scale` joined as `slide * spin * scaleMat`; an edge-detected `O` key rebuilds it backwards (`scaleMat * spin * slide`) to compare | [PHASE_6_EXPLANATION.md](PHASE_6_EXPLANATION.md) |
+| 7 | `uView` from `glm::lookAt` and `uProjection` from `glm::perspective`, added together; the triangle gains real world-space depth motion | [PHASE_7_EXPLANATION.md](PHASE_7_EXPLANATION.md) |
 
 Current source: `src/main.cpp`, `src/Shader.h`, `shaders/basic.vert`,
-`shaders/basic.frag`. There are no matrices, meshes, lights, ships, or gameplay
-yet. The model matrix holds a translation, a rotation, and a scale, correctly ordered as T * R * S. There is no view or projection yet.
+`shaders/basic.frag`. There are no meshes, lights, ships, or gameplay yet. The
+triangle now moves through a real 3D scene with a fixed camera: model, view,
+and projection matrices all multiply together in the vertex shader.
 
 ## How to read the tables
 
@@ -48,7 +50,7 @@ yet. The model matrix holds a translation, a rotation, and a scale, correctly or
 
 ## How far to work right now
 
-**Phase 7 to Phase 25** - the rest of Stage A, then all of Stage B. Phases 3 to 6 are
+**Phase 8 to Phase 25** - the rest of Stage A, then all of Stage B. Phases 3 to 7 are
 done. This range is the answer to "I want to work until I am creating 3D
 objects".
 
@@ -88,7 +90,7 @@ own and each with its own debugging method. They are now four phases.
 | 4 **done** | The first matrix: `uniform mat4 uModel` built by `glm::translate`, animated with `sinf(now)` | The triangle slides left and right | Change the travel distance | B3 |
 | 5 **done** | `glm::rotate` about the Z axis with `angle = now` | The triangle spins. Moving it off centre first makes it **orbit** instead, which is the lesson: rotation happens about the origin | Change the spin speed or the axis | B3 |
 | 6 **done** | `glm::scale`, and the `T * R * S` order, with a key that builds the product backwards on purpose | A sliding, spinning, pulsing triangle; the wrong order visibly smears or orbits | Swap two matrices and explain the result | B3 |
-| 7 * | `uView` from `glm::lookAt` and `uProjection` from `glm::perspective`, introduced **together** | Pushing the triangle along `-Z` now makes it shrink instead of vanishing | Change the field of view or the near/far planes | B3 |
+| 7 * **done** | `uView` from `glm::lookAt` and `uProjection` from `glm::perspective`, introduced **together** | Pushing the triangle along `-Z` now makes it shrink instead of vanishing | Change the field of view or the near/far planes | B3 |
 | 8 (o) | `GL_DEPTH_TEST` proved with two overlapping triangles at different `z`, and a key to switch it off | With depth off the later draw wins; with depth on the nearer one wins | Swap the draw order | B3 |
 | 9 | Indexed drawing: an EBO and `glDrawElements`, used to build a quad from 4 vertices and 6 indices | A quad made of two triangles that share an edge, with no duplicated corner data | Change one index and see the tear | B4 |
 | 10 * | The cube: 24 vertices, 36 indices, one face colour each | A solid 3D cube turning in space | Change a cube dimension or a face colour | B3 |

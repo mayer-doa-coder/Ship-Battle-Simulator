@@ -1,4 +1,4 @@
-// Ship Battle Simulator - Phase 6: scale, and the T * R * S order.
+// Ship Battle Simulator - Phase 7: the view and projection matrices.
 //
 // Every frame follows the same clear order:
 //   1. measure time;
@@ -7,11 +7,18 @@
 //   4. render the scene;
 //   5. show the frame and read window events.
 //
-// Phase 5 joined a move and a turn into one matrix. This phase adds a third
-// matrix that resizes the triangle, and makes the ORDER of the multiplication
-// the main lesson: press 'O' to build the same three matrices in reverse and
-// watch a spin turn into a smear. The shader and the upload code still do not
-// change: it is still one matrix in, multiplied by every vertex.
+// Phases 4-6 built one model matrix that places, turns, and resizes the
+// triangle in the WORLD. Every phase before this one then sent that world
+// position straight to the screen's flat -1..+1 box, which is why a spinning
+// triangle stretched in a wide window: there was no real 3D space yet.
+//
+// This phase adds the other two matrices a real scene needs, together,
+// because either one alone leaves nothing visible:
+//   uView       - where the camera is, and which way it faces;
+//   uProjection - how far things look smaller, and what is visible at all.
+// The triangle also gains real depth motion, so perspective has something to
+// prove: it now drifts toward and away from a fixed camera, and grows or
+// shrinks exactly the way a real object at that changing distance would.
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -30,7 +37,7 @@ namespace AppConfig {
 // These values are grouped here so they are easy to find and change during a viva.
 constexpr int WINDOW_WIDTH = 1280;
 constexpr int WINDOW_HEIGHT = 720;
-constexpr const char* WINDOW_TITLE = "Ship Battle Simulator - Phase 6: Scale & Order";
+constexpr const char* WINDOW_TITLE = "Ship Battle Simulator - Phase 7: View & Projection";
 constexpr const char* VERTEX_SHADER_PATH = "shaders/basic.vert";
 constexpr const char* FRAGMENT_SHADER_PATH = "shaders/basic.frag";
 
@@ -56,6 +63,27 @@ const glm::vec3 CLEAR_COLOR(0.82f, 0.66f, 0.04f);
 // triangle changes colour without any edit to shaders/basic.frag.
 const glm::vec3 TINT(0.6f, 2.4f, 3.0f);
 } // namespace AppConfig
+
+namespace CameraConfig {
+
+// Phase 7: a fixed camera. It does not move or look around yet - that is
+// Phase 12's orbit camera. For now it only needs a position, a point to look
+// at, and which way is "up" from its own point of view.
+const glm::vec3 EYE(0.0f, 0.0f, 4.0f);       // the camera's position in the world
+const glm::vec3 TARGET(0.0f, 0.0f, 0.0f);    // the point it looks at
+const glm::vec3 UP(0.0f, 1.0f, 0.0f);        // which way is "up" for this camera
+
+// The viewing frustum: a narrow pyramid of visible space with its point at
+// the camera. FIELD_OF_VIEW_DEGREES sets how wide that pyramid opens.
+// NEAR_PLANE and FAR_PLANE cut off anything closer or farther than that -
+// nothing outside this range is ever drawn, which is why both must comfortably
+// contain the triangle's whole depth range (Phase 7 moves it between 2.5 and
+// 5.5 units from EYE).
+constexpr float FIELD_OF_VIEW_DEGREES = 45.0f;
+constexpr float NEAR_PLANE = 0.1f;
+constexpr float FAR_PLANE = 100.0f;
+
+} // namespace CameraConfig
 
 namespace TriangleConfig {
 
@@ -118,6 +146,26 @@ constexpr float PULSE_SPEED = 1.2f;   // radians per second
 
 } // namespace TriangleScale
 
+namespace TriangleDepth {
+
+// Phase 7: how the triangle drifts toward and away from the camera. The world
+// z position at any moment is
+//     z = DEPTH_AMPLITUDE * sin(DEPTH_SPEED * now)
+// which swings between -DEPTH_AMPLITUDE and +DEPTH_AMPLITUDE. The camera sits
+// at CameraConfig::EYE.z = 4.0, so the triangle's actual distance from the
+// camera swings between (4 - DEPTH_AMPLITUDE) when it is nearest and
+// (4 + DEPTH_AMPLITUDE) when it is farthest.
+//
+// This is the phase's real demonstration. Before Phase 7, changing an
+// object's z did nothing useful: with no view or projection matrix, z never
+// affected how big anything looked, only whether it was clipped away. Now the
+// SAME triangle visibly grows as it nears the camera and shrinks as it
+// recedes, because uProjection performs a genuine perspective divide.
+constexpr float DEPTH_AMPLITUDE = 1.5f;   // world units nearer/farther than TARGET
+constexpr float DEPTH_SPEED = 0.8f;       // radians per second
+
+} // namespace TriangleDepth
+
 // Time values needed by one frame. Keeping them together makes it clear which
 // time is absolute and which value describes only the previous frame.
 struct FrameClock {
@@ -145,6 +193,13 @@ struct SceneState {
     // glm::mat4(1.0f) is the identity matrix: it moves nothing. Writing the 1.0f
     // explicitly keeps this correct in every glm version.
     glm::mat4 triangleModel = glm::mat4(1.0f);
+
+    // Phase 7: the camera's two matrices. Unlike triangleModel these do not
+    // depend on 'now' yet, because the camera itself does not move until
+    // Phase 12. They ARE rebuilt every frame, because uProjection depends on
+    // the window's aspect ratio, and the window can be resized at any time.
+    glm::mat4 view = glm::mat4(1.0f);
+    glm::mat4 projection = glm::mat4(1.0f);
 
     // Phase 6: toggled by the 'O' key. False builds the correct T * R * S
     // order; true builds the same three matrices back to front, on purpose,
@@ -207,7 +262,12 @@ static void updateClock(FrameClock& clock)
     clock.lastFrameTime = clock.now;
 }
 
-static void updateScene(SceneState& scene, float now, float deltaTime)
+static void updateScene(
+    SceneState& scene,
+    float now,
+    float deltaTime,
+    int framebufferWidth,
+    int framebufferHeight)
 {
     // 'now' drives motion that follows a formula, like this slide.
     // Nothing is stored between frames: the position is recalculated from the
@@ -215,10 +275,15 @@ static void updateScene(SceneState& scene, float now, float deltaTime)
     const float offsetX =
         TriangleMotion::SLIDE_DISTANCE * std::sin(TriangleMotion::SLIDE_SPEED * now);
 
+    // Phase 7: the triangle's world-space depth. Positive moves it toward
+    // CameraConfig::EYE (nearer, so it looks bigger); negative moves it away.
+    const float offsetZ =
+        TriangleDepth::DEPTH_AMPLITUDE * std::sin(TriangleDepth::DEPTH_SPEED * now);
+
     // glm::translate(matrix, vector) returns 'matrix' with a move of 'vector'
     // added. Starting from the identity matrix gives a pure translation.
     const glm::mat4 slide =
-        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, offsetX, 0.0f));
+        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, offsetX, offsetZ));
 
     // Phase 5: glm::rotate(matrix, angle, axis) works the same way, but adds a
     // turn. The angle is in radians and comes from the clock, like the slide.
@@ -259,6 +324,26 @@ static void updateScene(SceneState& scene, float now, float deltaTime)
     scene.triangleModel = scene.reverseOrder
         ? scaleMat * spin * slide    // S * R * T, deliberately backwards
         : slide * spin * scaleMat;   // T * R * S, correct
+
+    // Phase 7: glm::lookAt(eye, target, up) builds the view matrix from three
+    // vectors instead of a translate/rotate/scale recipe. It re-measures every
+    // WORLD position as seen from the camera, so the camera can stay at the
+    // origin of its own space while everything else moves around it.
+    scene.view = glm::lookAt(CameraConfig::EYE, CameraConfig::TARGET, CameraConfig::UP);
+
+    // The projection depends on the window's shape, not the clock, so it is
+    // rebuilt from the CURRENT framebuffer size every frame. A minimised
+    // window can report a height of 0, and dividing by that would be
+    // undefined, so a height of at least 1 is always used for the aspect
+    // ratio.
+    const int safeHeight = std::max(framebufferHeight, 1);
+    const float aspectRatio =
+        static_cast<float>(framebufferWidth) / static_cast<float>(safeHeight);
+    scene.projection = glm::perspective(
+        glm::radians(CameraConfig::FIELD_OF_VIEW_DEGREES),
+        aspectRatio,
+        CameraConfig::NEAR_PLANE,
+        CameraConfig::FAR_PLANE);
 
     // deltaTime is for input-driven motion such as steering (a later phase).
     // This cast tells the compiler that leaving it unused is intentional.
@@ -348,6 +433,12 @@ static void renderScene(ShaderProgram& shader, const TriangleGpu& triangle, cons
     // Phase 4: the first use of setMat4. The matrix is rebuilt every frame in
     // updateScene() and uploaded here, before the draw call that needs it.
     shader.setMat4("uModel", scene.triangleModel);
+
+    // Phase 7: the other two matrices the shader now multiplies by. Order of
+    // upload does not matter here, only the order they are multiplied in
+    // inside the shader.
+    shader.setMat4("uView", scene.view);
+    shader.setMat4("uProjection", scene.projection);
 
     glBindVertexArray(triangle.vao);
     glDrawArrays(GL_TRIANGLES, 0, TriangleConfig::VERTEX_COUNT);
@@ -460,7 +551,7 @@ int main()
         return 1;
     }
 
-    std::printf("Phase 6 ready. Press O to compare transform order. Press ESC to close.\n");
+    std::printf("Phase 7 ready. Press O to compare transform order. Press ESC to close.\n");
 
     SceneState scene;
 
@@ -474,7 +565,12 @@ int main()
         updateClock(clock);
         processInput(window, scene);
 
-        updateScene(scene, clock.now, clock.deltaTime);
+        // Phase 7: read the CURRENT framebuffer size every frame, not just
+        // once at startup, so uProjection keeps a correct aspect ratio if the
+        // window is resized while the program runs.
+        glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
+
+        updateScene(scene, clock.now, clock.deltaTime, framebufferWidth, framebufferHeight);
         renderScene(shader, triangle, scene);
 
         glfwSwapBuffers(window);
