@@ -1,10 +1,10 @@
 # AGENT.md - Ship Battle Simulator
 
-This repository is the incremental teaching build. The current source of truth is [README.md](README.md), the phase plan is [docs/PHASE_PLAN.md](docs/PHASE_PLAN.md), and the current completed checkpoint is documented in [docs/PHASE_2_EXPLANATION.md](docs/PHASE_2_EXPLANATION.md).
+This repository is the incremental teaching build. The current source of truth is [README.md](README.md), the phase plan is [docs/PHASE_PLAN.md](docs/PHASE_PLAN.md), and the current completed checkpoint is documented in [docs/PHASE_3_EXPLANATION.md](docs/PHASE_3_EXPLANATION.md).
 
 ## Current phase boundary
 
-Phase 2 is the latest implemented phase. The next phase is Phase 3 in [docs/PHASE_PLAN.md](docs/PHASE_PLAN.md): uniform setters plus the projection and view matrices, and nothing else. Do not add a model matrix, a camera, reusable meshes, ships, animation, or gameplay unless the student explicitly asks to begin the phase that owns it.
+Phase 3 is the latest implemented phase. The next phase is Phase 4 in [docs/PHASE_PLAN.md](docs/PHASE_PLAN.md): one `uniform mat4 uModel` built by `glm::translate` and animated with `sinf(now)`, and nothing else. Matrices begin at Phase 4, the first 3D object at Phase 10, and reusable meshes at Phase 14. Do not add any of them unless the student explicitly asks to begin the phase that owns it.
 
 ## Permanent project requirements
 
@@ -31,6 +31,6 @@ The finished project will contain:
 
 These requirements are future phases, not permission to implement them all at once.
 
-## Phase 2 checkpoint
+## Phase 3 checkpoint
 
-Phase 2 is complete only when the project configures, builds, compiles and links the two GLSL files with useful failure logs, displays one coloured triangle, reports sensible frame timing, remains responsive, and closes normally. The triangle remains a temporary test, not a reusable project mesh.
+Phase 3 is complete only when the project builds in Debug and Release, the triangle is visibly tinted by `AppConfig::TINT`, changing that value alters the colour without editing `shaders/basic.frag`, a misspelled uniform name prints exactly one warning instead of one per frame, and the window still reports frame timing and closes normally. The triangle remains a temporary test, not a reusable project mesh.

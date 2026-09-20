@@ -2,7 +2,7 @@
 
 This is the step-by-step teaching version of `Broadside`. It will eventually demonstrate the same naval battle, but every phase must stay small enough to explain, modify, and demonstrate independently.
 
-## Current progress: Phase 2
+## Current progress: Phase 3
 
 The repository currently contains only the OpenGL foundation:
 
@@ -15,9 +15,10 @@ The repository currently contains only the OpenGL foundation:
 - a structured render loop with separate input, update, render, and timing jobs;
 - frame time and FPS reporting;
 - a checked shader loader;
-- a temporary coloured triangle proving the vertex/fragment pipeline works.
+- a temporary coloured triangle proving the vertex/fragment pipeline works;
+- uniform setters that send values from C++ into the running shader.
 
-There are deliberately no ships, shaders, meshes, transformations, animations, cannons, people, or environment modes yet.
+There are deliberately no ships, meshes, transformations, animations, cannons, people, or environment modes yet.
 
 ## Build on Windows
 
@@ -61,20 +62,20 @@ is a single concept with a single visual checkpoint.
 
 | Stage | Phases | Outcome |
 |---|---|---|
-| Done | 0-2 | Window, render loop, shader loader, test triangle |
-| A | 3-6 | Projection, view, model matrices, first cube, orbit camera |
-| B | 7-11 | Reusable cube/grid/cylinder/sphere meshes and runtime tessellation |
-| C | 12-19 | Ambient, diffuse, specular, materials, second light, Flat/Gouraud/Phong |
-| D | 20-23 | One static hierarchical ship and the hierarchy proof |
-| E | 24-25 | Keyboard-controlled player ship |
-| F | 26-29 | Animated sea, ship rocking, idle rigging motion |
-| G | 30-32 | Cannon aiming and the muzzle transform |
-| H | 33-35 | Ballistic firing, trajectory control, reload |
-| I | 36-38 | A second ship, then a reusable fleet and target selection |
-| J | 39-41 | Hit and splash resolution, pooled particles |
-| K | 42-46 | Crew roles: lookout, helmsman, cannon crew, helpers |
-| L | 47-48 | Teaching HUD and the optimization measurement pass |
-| M | 49-51 | Sun, moonlight, rain, and winter modes |
-| N | 52 | Report and viva rehearsal |
+| Done | 0-3 | Window, render loop, shader loader, test triangle, uniforms |
+| A | 4-13 | Model/view/projection matrices, depth, indices, the first cube, culling, orbit camera |
+| B | 14-25 | Reusable cube/quad/grid/cylinder/sphere meshes, smooth normals, runtime tessellation |
+| C | 26-33 | Ambient, diffuse, specular, materials, second light, Flat/Gouraud/Phong |
+| D | 34-37 | One static hierarchical ship and the hierarchy proof |
+| E | 38-39 | Keyboard-controlled player ship |
+| F | 40-43 | Animated sea, ship rocking, idle rigging motion |
+| G | 44-46 | Cannon aiming and the muzzle transform |
+| H | 47-49 | Ballistic firing, trajectory control, reload |
+| I | 50-52 | A second ship, then a reusable fleet and target selection |
+| J | 53-55 | Hit and splash resolution, pooled particles |
+| K | 56-60 | Crew roles: lookout, helmsman, cannon crew, helpers |
+| L | 61-62 | Teaching HUD and the optimization measurement pass |
+| M | 63-65 | Sun, moonlight, rain, and winter modes |
+| N | 66 | Report and viva rehearsal |
 
 This order may be refined in documentation, but environment modes remain the last functional feature as requested.

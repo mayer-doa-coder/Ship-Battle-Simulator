@@ -1,4 +1,4 @@
-// Ship Battle Simulator - Phase 2: first shader and test triangle.
+// Ship Battle Simulator - Phase 3: sending values into the shader (uniforms).
 //
 // Every frame follows the same clear order:
 //   1. measure time;
@@ -7,8 +7,9 @@
 //   4. render the scene;
 //   5. show the frame and read window events.
 //
-// This phase adds one temporary coloured triangle to prove that shader files,
-// vertex data, and the OpenGL draw pipeline are connected correctly.
+// Phase 2 proved that the draw pipeline works. This phase adds the other
+// direction of traffic: a uniform, which lets C++ change what the shader
+// produces while the program is running.
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -25,7 +26,7 @@ namespace AppConfig {
 // These values are grouped here so they are easy to find and change during a viva.
 constexpr int WINDOW_WIDTH = 1280;
 constexpr int WINDOW_HEIGHT = 720;
-constexpr const char* WINDOW_TITLE = "Ship Battle Simulator - Phase 2: Shader Test";
+constexpr const char* WINDOW_TITLE = "Ship Battle Simulator - Phase 3: Uniforms";
 constexpr const char* VERTEX_SHADER_PATH = "shaders/basic.vert";
 constexpr const char* FRAGMENT_SHADER_PATH = "shaders/basic.frag";
 
@@ -42,6 +43,14 @@ constexpr int VSYNC_INTERVAL = 1;
 // GLM is used here so Phase 0 verifies that the math library is configured too.
 const glm::vec3 CLEAR_COLOR(0.82f, 0.66f, 0.04f);
 
+// Phase 3: a colour filter sent to the fragment shader every frame as the
+// uniform 'uTint'. Each vertex colour is multiplied by it.
+//   (1, 1, 1)    leaves the triangle exactly as its vertex colours describe;
+//   below 1      dims that channel;
+//   above 1      brightens it, up to the display limit of 1.
+// This is the easiest viva value in the phase: change it, rebuild, and the
+// triangle changes colour without any edit to shaders/basic.frag.
+const glm::vec3 TINT(0.6f, 2.4f, 3.0f);
 } // namespace AppConfig
 
 namespace TriangleConfig {
@@ -119,7 +128,7 @@ static void updateClock(FrameClock& clock)
 
 static void updateScene(float now, float deltaTime)
 {
-    // Phase 2 has no moving scene data yet. Later phases will use:
+    // Phase 3 still has no moving scene data. Later phases will use:
     //   now       for time-based motion such as waves;
     //   deltaTime for input-driven motion such as steering.
     // These casts tell the compiler that the unused parameters are intentional.
@@ -188,7 +197,9 @@ static void destroyTriangle(TriangleGpu& triangle)
     triangle.vao = 0;
 }
 
-static void renderScene(const ShaderProgram& shader, const TriangleGpu& triangle)
+// The shader is no longer passed as const: setting a uniform changes the
+// shader program, so this function can no longer promise to leave it alone.
+static void renderScene(ShaderProgram& shader, const TriangleGpu& triangle)
 {
     glClearColor(
         AppConfig::CLEAR_COLOR.r,
@@ -198,9 +209,14 @@ static void renderScene(const ShaderProgram& shader, const TriangleGpu& triangle
 
     // Clear both buffers every frame. The colour buffer holds visible pixels;
     // the depth buffer will decide which 3D surfaces are closest in later phases.
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+    ;
 
+    // use() first: a uniform is written into whichever program is currently
+    // in use, so setting it before use() would send the value nowhere.
     shader.use();
+    shader.setVec3("uTint", AppConfig::TINT);
+
     glBindVertexArray(triangle.vao);
     glDrawArrays(GL_TRIANGLES, 0, TriangleConfig::VERTEX_COUNT);
     glBindVertexArray(0);
@@ -312,7 +328,7 @@ int main()
         return 1;
     }
 
-    std::printf("Phase 2 ready. Press ESC to close.\n");
+    std::printf("Phase 3 ready. Press ESC to close.\n");
 
     FrameClock clock;
     startClock(clock);
