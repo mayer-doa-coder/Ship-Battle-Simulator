@@ -27,10 +27,12 @@ Phase 52 is now Phase 66.
 | 1 | Render loop split into clock/input/update/render/report, `dt` clamp, FPS report | [PHASE_1_EXPLANATION.md](PHASE_1_EXPLANATION.md) |
 | 2 | Checked shader loader, VAO/VBO, one temporary coloured triangle | [PHASE_2_EXPLANATION.md](PHASE_2_EXPLANATION.md) |
 | 3 | Uniform setters on `ShaderProgram`, one `uTint` colour filter, warn-once on a missing uniform | [PHASE_3_EXPLANATION.md](PHASE_3_EXPLANATION.md) |
+| 4 | `uniform mat4 uModel` built by `glm::translate` from `sinf(now)`, first use of `setMat4` | [PHASE_4_EXPLANATION.md](PHASE_4_EXPLANATION.md) |
+| 5 | `glm::rotate` about Z from `now`, joined to the slide as `slide * spin`; the turn is about the origin | [PHASE_5_EXPLANATION.md](PHASE_5_EXPLANATION.md) |
 
 Current source: `src/main.cpp`, `src/Shader.h`, `shaders/basic.vert`,
 `shaders/basic.frag`. There are no matrices, meshes, lights, ships, or gameplay
-yet. `setMat4` exists but is unused until Phase 4.
+yet. The model matrix holds a translation and a rotation, and there is no scale, view, or projection yet.
 
 ## How to read the tables
 
@@ -45,7 +47,7 @@ yet. `setMat4` exists but is unused until Phase 4.
 
 ## How far to work right now
 
-**Phase 4 to Phase 25** - the rest of Stage A, then all of Stage B. Phase 3 is
+**Phase 6 to Phase 25** - the rest of Stage A, then all of Stage B. Phases 3 to 5 are
 done. This range is the answer to "I want to work until I am creating 3D
 objects".
 
@@ -82,8 +84,8 @@ own and each with its own debugging method. They are now four phases.
 | Phase | Adds | Checkpoint | Viva change | Ref |
 |---:|---|---|---|---|
 | 3 **done** | Uniform setters on `ShaderProgram` (`setInt`, `setFloat`, `setVec3`, `setMat4`), used to drive one `uniform vec3 uTint` in the fragment shader | A value in C++ changes the triangle's colour, with no change to the shader file | Change the tint | B3 |
-| 4 | The first matrix: `uniform mat4 uModel` built by `glm::translate`, animated with `sinf(now)` | The triangle slides left and right | Change the travel distance | B3 |
-| 5 | `glm::rotate` about the Z axis with `angle = now` | The triangle spins. Moving it off centre first makes it **orbit** instead, which is the lesson: rotation happens about the origin | Change the spin speed or the axis | B3 |
+| 4 **done** | The first matrix: `uniform mat4 uModel` built by `glm::translate`, animated with `sinf(now)` | The triangle slides left and right | Change the travel distance | B3 |
+| 5 **done** | `glm::rotate` about the Z axis with `angle = now` | The triangle spins. Moving it off centre first makes it **orbit** instead, which is the lesson: rotation happens about the origin | Change the spin speed or the axis | B3 |
 | 6 | `glm::scale`, and the `T * R * S` order, with a key that builds the product backwards on purpose | A sliding, spinning, pulsing triangle; the wrong order visibly smears or orbits | Swap two matrices and explain the result | B3 |
 | 7 * | `uView` from `glm::lookAt` and `uProjection` from `glm::perspective`, introduced **together** | Pushing the triangle along `-Z` now makes it shrink instead of vanishing | Change the field of view or the near/far planes | B3 |
 | 8 (o) | `GL_DEPTH_TEST` proved with two overlapping triangles at different `z`, and a key to switch it off | With depth off the later draw wins; with depth on the nearer one wins | Swap the draw order | B3 |

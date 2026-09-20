@@ -1,10 +1,10 @@
 # AGENT.md - Ship Battle Simulator
 
-This repository is the incremental teaching build. The current source of truth is [README.md](README.md), the phase plan is [docs/PHASE_PLAN.md](docs/PHASE_PLAN.md), and the current completed checkpoint is documented in [docs/PHASE_3_EXPLANATION.md](docs/PHASE_3_EXPLANATION.md).
+This repository is the incremental teaching build. The current source of truth is [README.md](README.md), the phase plan is [docs/PHASE_PLAN.md](docs/PHASE_PLAN.md), and the current completed checkpoint is documented in [docs/PHASE_5_EXPLANATION.md](docs/PHASE_5_EXPLANATION.md).
 
 ## Current phase boundary
 
-Phase 3 is the latest implemented phase. The next phase is Phase 4 in [docs/PHASE_PLAN.md](docs/PHASE_PLAN.md): one `uniform mat4 uModel` built by `glm::translate` and animated with `sinf(now)`, and nothing else. Matrices begin at Phase 4, the first 3D object at Phase 10, and reusable meshes at Phase 14. Do not add any of them unless the student explicitly asks to begin the phase that owns it.
+Phase 5 is the latest implemented phase. The next phase is Phase 6 in [docs/PHASE_PLAN.md](docs/PHASE_PLAN.md): `glm::scale` and the full `T * R * S` order, with a key that builds the product backwards on purpose, and nothing else. View and projection begin at Phase 7, the first 3D object at Phase 10, and reusable meshes at Phase 14. Do not add any of them unless the student explicitly asks to begin the phase that owns it.
 
 ## Permanent project requirements
 
@@ -31,6 +31,6 @@ The finished project will contain:
 
 These requirements are future phases, not permission to implement them all at once.
 
-## Phase 3 checkpoint
+## Phase 5 checkpoint
 
-Phase 3 is complete only when the project builds in Debug and Release, the triangle is visibly tinted by `AppConfig::TINT`, changing that value alters the colour without editing `shaders/basic.frag`, a misspelled uniform name prints exactly one warning instead of one per frame, and the window still reports frame timing and closes normally. The triangle remains a temporary test, not a reusable project mesh.
+Phase 5 is complete only when the project builds in Debug and Release with no compiler warnings, both shaders link with no missing-uniform warning, the triangle spins under `uModel` while it slides and never disappears during a normal run, changing `TriangleSpin::SPIN_SPEED` changes the spin with no shader edit, swapping the multiplication order to `spin * slide` makes the triangle circle instead of spin, and the window still reports frame timing and closes normally. The triangle remains a temporary test, not a reusable project mesh.

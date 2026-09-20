@@ -1,4 +1,4 @@
-// Ship Battle Simulator - Phase 3: sending values into the shader (uniforms).
+// Ship Battle Simulator - Phase 5: the model matrix (translation and rotation).
 //
 // Every frame follows the same clear order:
 //   1. measure time;
@@ -7,18 +7,20 @@
 //   4. render the scene;
 //   5. show the frame and read window events.
 //
-// Phase 2 proved that the draw pipeline works. This phase adds the other
-// direction of traffic: a uniform, which lets C++ change what the shader
-// produces while the program is running.
+// Phase 4 built a matrix that moves the triangle. This phase adds a second
+// matrix that turns it, and joins the two by multiplying them together. The
+// shader and the upload code are unchanged: one matrix can hold both jobs.
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 #include "Shader.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 
 namespace AppConfig {
@@ -26,7 +28,7 @@ namespace AppConfig {
 // These values are grouped here so they are easy to find and change during a viva.
 constexpr int WINDOW_WIDTH = 1280;
 constexpr int WINDOW_HEIGHT = 720;
-constexpr const char* WINDOW_TITLE = "Ship Battle Simulator - Phase 3: Uniforms";
+constexpr const char* WINDOW_TITLE = "Ship Battle Simulator - Phase 5: Rotation";
 constexpr const char* VERTEX_SHADER_PATH = "shaders/basic.vert";
 constexpr const char* FRAGMENT_SHADER_PATH = "shaders/basic.frag";
 
@@ -59,9 +61,9 @@ namespace TriangleConfig {
 // These are easy viva values: edit positions to reshape/move the triangle and
 // edit colours to change its three corners.
 constexpr float VERTICES[] = {
-     0.40f,  0.50f, 0.0f,   0.1f, 0.1f, 0.1f,
-    -0.40f,  0.50f, 0.0f,   0.1f, 0.1f, 0.1f,
-     0.00f, -0.60f, 0.0f,   0.1f, 0.1f, 1.0f
+     0.40f,  0.37f, 0.0f,   0.1f, 0.1f, 0.1f,
+    -0.40f,  0.37f, 0.0f,   0.1f, 0.1f, 0.1f,
+     0.00f, -0.73f, 0.0f,   0.1f, 0.1f, 1.0f
 };
 
 constexpr int VERTEX_COUNT = 3;
@@ -70,6 +72,35 @@ constexpr int POSITION_COMPONENTS = 3;
 constexpr int COLOR_COMPONENTS = 3;
 
 } // namespace TriangleConfig
+
+namespace TriangleMotion {
+
+// Phase 4: how the triangle slides. The x offset at any moment is
+//     offset = SLIDE_DISTANCE * sin(SLIDE_SPEED * now)
+// so it swings between -SLIDE_DISTANCE and +SLIDE_DISTANCE.
+// The visible x range is -1 to +1 and the triangle is 0.4 wide on each side of
+// its centre, so a distance above 0.6 pushes part of it off the screen.
+constexpr float SLIDE_DISTANCE = 0.5f;   // how far each way, in clip-space units
+constexpr float SLIDE_SPEED = 1.0f;      // radians per second; one full swing is 2*pi / this
+
+} // namespace TriangleMotion
+
+namespace TriangleSpin {
+
+// Phase 5: how the triangle turns. The angle at any moment is
+//     angle = SPIN_SPEED * now
+// measured in RADIANS. A full turn is 2*pi = 6.28 radians, so a speed of 2.0
+// completes one turn in about 3.14 seconds. A positive angle turns
+// counter-clockwise when the axis points toward the viewer.
+//
+// The turn happens around the model-space ORIGIN (0, 0), which is not exactly
+// the visual middle of this triangle (its corners average to y = +0.13), so the
+// triangle wobbles a little as it turns. To spin exactly on its middle, edit
+// TriangleConfig::VERTICES so the three y values add up to zero.
+constexpr float SPIN_SPEED = 0.5f;                        // radians per second
+const glm::vec3 SPIN_AXIS(0.0f, 0.0f, 1.0f);              // Z: straight out of the screen
+
+} // namespace TriangleSpin
 
 // Time values needed by one frame. Keeping them together makes it clear which
 // time is absolute and which value describes only the previous frame.
@@ -90,6 +121,14 @@ struct FrameStats {
 struct TriangleGpu {
     GLuint vao = 0;
     GLuint vbo = 0;
+};
+
+// Data that changes as the scene changes. updateScene() writes it and
+// renderScene() reads it, so neither function needs to know about the other.
+struct SceneState {
+    // glm::mat4(1.0f) is the identity matrix: it moves nothing. Writing the 1.0f
+    // explicitly keeps this correct in every glm version.
+    glm::mat4 triangleModel = glm::mat4(1.0f);
 };
 
 static void glfwErrorCallback(int errorCode, const char* description)
@@ -126,13 +165,36 @@ static void updateClock(FrameClock& clock)
     clock.lastFrameTime = clock.now;
 }
 
-static void updateScene(float now, float deltaTime)
+static void updateScene(SceneState& scene, float now, float deltaTime)
 {
-    // Phase 3 still has no moving scene data. Later phases will use:
-    //   now       for time-based motion such as waves;
-    //   deltaTime for input-driven motion such as steering.
-    // These casts tell the compiler that the unused parameters are intentional.
-    static_cast<void>(now);
+    // 'now' drives motion that follows a formula, like this slide.
+    // Nothing is stored between frames: the position is recalculated from the
+    // clock every time, so there is no table of positions to pre-compute.
+    const float offsetX =
+        TriangleMotion::SLIDE_DISTANCE * std::sin(TriangleMotion::SLIDE_SPEED * now);
+
+    // glm::translate(matrix, vector) returns 'matrix' with a move of 'vector'
+    // added. Starting from the identity matrix gives a pure translation.
+    const glm::mat4 slide =
+        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, offsetX, 0.0f));
+
+    // Phase 5: glm::rotate(matrix, angle, axis) works the same way, but adds a
+    // turn. The angle is in radians and comes from the clock, like the slide.
+    const float spinAngle = TriangleSpin::SPIN_SPEED * now;
+    const glm::mat4 spin =
+        glm::rotate(glm::mat4(1.0f), spinAngle, TriangleSpin::SPIN_AXIS);
+
+    // Join the two by multiplying. Read the product from RIGHT to LEFT, because
+    // the vertex meets the rightmost matrix first:
+    //   1. spin  - turns the triangle around the origin, where its corners sit;
+    //   2. slide - then carries the turned triangle to its place on screen.
+    // Swapping the two would carry the triangle first and then turn the whole
+    // trip around the origin, so it would circle instead of spin. Phase 6 makes
+    // this order the main lesson.
+    scene.triangleModel = slide * spin;
+
+    // deltaTime is for input-driven motion such as steering (a later phase).
+    // This cast tells the compiler that leaving it unused is intentional.
     static_cast<void>(deltaTime);
 }
 
@@ -199,7 +261,7 @@ static void destroyTriangle(TriangleGpu& triangle)
 
 // The shader is no longer passed as const: setting a uniform changes the
 // shader program, so this function can no longer promise to leave it alone.
-static void renderScene(ShaderProgram& shader, const TriangleGpu& triangle)
+static void renderScene(ShaderProgram& shader, const TriangleGpu& triangle, const SceneState& scene)
 {
     glClearColor(
         AppConfig::CLEAR_COLOR.r,
@@ -216,6 +278,10 @@ static void renderScene(ShaderProgram& shader, const TriangleGpu& triangle)
     // in use, so setting it before use() would send the value nowhere.
     shader.use();
     shader.setVec3("uTint", AppConfig::TINT);
+
+    // Phase 4: the first use of setMat4. The matrix is rebuilt every frame in
+    // updateScene() and uploaded here, before the draw call that needs it.
+    shader.setMat4("uModel", scene.triangleModel);
 
     glBindVertexArray(triangle.vao);
     glDrawArrays(GL_TRIANGLES, 0, TriangleConfig::VERTEX_COUNT);
@@ -328,7 +394,9 @@ int main()
         return 1;
     }
 
-    std::printf("Phase 3 ready. Press ESC to close.\n");
+    std::printf("Phase 5 ready. Press ESC to close.\n");
+
+    SceneState scene;
 
     FrameClock clock;
     startClock(clock);
@@ -340,8 +408,8 @@ int main()
         updateClock(clock);
         processInput(window);
 
-        updateScene(clock.now, clock.deltaTime);
-        renderScene(shader, triangle);
+        updateScene(scene, clock.now, clock.deltaTime);
+        renderScene(shader, triangle, scene);
 
         glfwSwapBuffers(window);
         glfwPollEvents();
