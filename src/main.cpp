@@ -1,4 +1,4 @@
-// Ship Battle Simulator - Phase 1: structured render loop and frame timing.
+// Ship Battle Simulator - Phase 2: first shader and test triangle.
 //
 // Every frame follows the same clear order:
 //   1. measure time;
@@ -7,13 +7,15 @@
 //   4. render the scene;
 //   5. show the frame and read window events.
 //
-// Later phases will fill updateScene() and renderScene() without making main()
-// difficult to read. No object, shader, or gameplay code belongs in Phase 1.
+// This phase adds one temporary coloured triangle to prove that shader files,
+// vertex data, and the OpenGL draw pipeline are connected correctly.
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
 #include <glm/glm.hpp>
+
+#include "Shader.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -23,7 +25,9 @@ namespace AppConfig {
 // These values are grouped here so they are easy to find and change during a viva.
 constexpr int WINDOW_WIDTH = 1280;
 constexpr int WINDOW_HEIGHT = 720;
-constexpr const char* WINDOW_TITLE = "Ship Battle Simulator - Phase 1: Render Loop";
+constexpr const char* WINDOW_TITLE = "Ship Battle Simulator - Phase 2: Shader Test";
+constexpr const char* VERTEX_SHADER_PATH = "shaders/basic.vert";
+constexpr const char* FRAGMENT_SHADER_PATH = "shaders/basic.frag";
 
 // A delayed or dragged window can create one unusually large frame time.
 // Limiting dt prevents future movement from jumping a large distance at once.
@@ -40,6 +44,24 @@ const glm::vec3 CLEAR_COLOR(0.82f, 0.66f, 0.04f);
 
 } // namespace AppConfig
 
+namespace TriangleConfig {
+
+// Each row is: position x/y/z, then colour red/green/blue.
+// These are easy viva values: edit positions to reshape/move the triangle and
+// edit colours to change its three corners.
+constexpr float VERTICES[] = {
+     0.40f,  0.50f, 0.0f,   0.1f, 0.1f, 0.1f,
+    -0.40f,  0.50f, 0.0f,   0.1f, 0.1f, 0.1f,
+     0.00f, -0.60f, 0.0f,   0.1f, 0.1f, 1.0f
+};
+
+constexpr int VERTEX_COUNT = 3;
+constexpr int FLOATS_PER_VERTEX = 6;
+constexpr int POSITION_COMPONENTS = 3;
+constexpr int COLOR_COMPONENTS = 3;
+
+} // namespace TriangleConfig
+
 // Time values needed by one frame. Keeping them together makes it clear which
 // time is absolute and which value describes only the previous frame.
 struct FrameClock {
@@ -52,6 +74,13 @@ struct FrameClock {
 struct FrameStats {
     float reportStartTime = 0.0f;
     int renderedFrames = 0;
+};
+
+// GPU handles for this phase's temporary triangle.
+// VAO remembers the vertex layout; VBO stores the vertex numbers.
+struct TriangleGpu {
+    GLuint vao = 0;
+    GLuint vbo = 0;
 };
 
 static void glfwErrorCallback(int errorCode, const char* description)
@@ -90,7 +119,7 @@ static void updateClock(FrameClock& clock)
 
 static void updateScene(float now, float deltaTime)
 {
-    // Phase 1 has no moving scene data yet. Later phases will use:
+    // Phase 2 has no moving scene data yet. Later phases will use:
     //   now       for time-based motion such as waves;
     //   deltaTime for input-driven motion such as steering.
     // These casts tell the compiler that the unused parameters are intentional.
@@ -98,7 +127,68 @@ static void updateScene(float now, float deltaTime)
     static_cast<void>(deltaTime);
 }
 
-static void renderScene()
+static bool createTriangle(TriangleGpu& triangle)
+{
+    glGenVertexArrays(1, &triangle.vao);
+    glGenBuffers(1, &triangle.vbo);
+
+    glBindVertexArray(triangle.vao);
+    glBindBuffer(GL_ARRAY_BUFFER, triangle.vbo);
+    glBufferData(
+        GL_ARRAY_BUFFER,
+        sizeof(TriangleConfig::VERTICES),
+        TriangleConfig::VERTICES,
+        GL_STATIC_DRAW);
+
+    const GLsizei stride = static_cast<GLsizei>(
+        TriangleConfig::FLOATS_PER_VERTEX * sizeof(float));
+
+    // Attribute 0 reads the first three floats: x, y, z.
+    glVertexAttribPointer(
+        0,
+        TriangleConfig::POSITION_COMPONENTS,
+        GL_FLOAT,
+        GL_FALSE,
+        stride,
+        nullptr);
+    glEnableVertexAttribArray(0);
+
+    // Attribute 1 starts after the three position floats and reads r, g, b.
+    glVertexAttribPointer(
+        1,
+        TriangleConfig::COLOR_COMPONENTS,
+        GL_FLOAT,
+        GL_FALSE,
+        stride,
+        reinterpret_cast<const void*>(
+            TriangleConfig::POSITION_COMPONENTS * sizeof(float)));
+    glEnableVertexAttribArray(1);
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+
+    const GLenum error = glGetError();
+    if (error != GL_NO_ERROR) {
+        std::fprintf(stderr, "[triangle] OpenGL setup error: 0x%04X\n", error);
+        return false;
+    }
+
+    return triangle.vao != 0 && triangle.vbo != 0;
+}
+
+static void destroyTriangle(TriangleGpu& triangle)
+{
+    if (triangle.vbo != 0)
+        glDeleteBuffers(1, &triangle.vbo);
+
+    if (triangle.vao != 0)
+        glDeleteVertexArrays(1, &triangle.vao);
+
+    triangle.vbo = 0;
+    triangle.vao = 0;
+}
+
+static void renderScene(const ShaderProgram& shader, const TriangleGpu& triangle)
 {
     glClearColor(
         AppConfig::CLEAR_COLOR.r,
@@ -109,6 +199,11 @@ static void renderScene()
     // Clear both buffers every frame. The colour buffer holds visible pixels;
     // the depth buffer will decide which 3D surfaces are closest in later phases.
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    shader.use();
+    glBindVertexArray(triangle.vao);
+    glDrawArrays(GL_TRIANGLES, 0, TriangleConfig::VERTEX_COUNT);
+    glBindVertexArray(0);
 }
 
 static void reportFrame(FrameStats& stats, const FrameClock& clock)
@@ -198,7 +293,26 @@ int main()
     std::printf("OpenGL   : %s\n", glGetString(GL_VERSION));
     std::printf("GLSL     : %s\n", glGetString(GL_SHADING_LANGUAGE_VERSION));
     std::printf("Renderer : %s\n", glGetString(GL_RENDERER));
-    std::printf("Phase 1 ready. Press ESC to close.\n");
+    ShaderProgram shader;
+    if (!shader.loadFromFiles(
+            AppConfig::VERTEX_SHADER_PATH,
+            AppConfig::FRAGMENT_SHADER_PATH)) {
+        glfwDestroyWindow(window);
+        glfwTerminate();
+        return 1;
+    }
+
+    TriangleGpu triangle;
+    if (!createTriangle(triangle)) {
+        std::fprintf(stderr, "Failed to create the shader-test triangle.\n");
+        destroyTriangle(triangle);
+        shader.destroy();
+        glfwDestroyWindow(window);
+        glfwTerminate();
+        return 1;
+    }
+
+    std::printf("Phase 2 ready. Press ESC to close.\n");
 
     FrameClock clock;
     startClock(clock);
@@ -211,13 +325,17 @@ int main()
         processInput(window);
 
         updateScene(clock.now, clock.deltaTime);
-        renderScene();
+        renderScene(shader, triangle);
 
         glfwSwapBuffers(window);
         glfwPollEvents();
 
         reportFrame(stats, clock);
     }
+
+    // OpenGL resources must be deleted while the context still exists.
+    destroyTriangle(triangle);
+    shader.destroy();
 
     glfwDestroyWindow(window);
     glfwTerminate();

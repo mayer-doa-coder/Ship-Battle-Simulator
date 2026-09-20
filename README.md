@@ -2,7 +2,7 @@
 
 This is the step-by-step teaching version of `Broadside`. It will eventually demonstrate the same naval battle, but every phase must stay small enough to explain, modify, and demonstrate independently.
 
-## Current progress: Phase 1
+## Current progress: Phase 2
 
 The repository currently contains only the OpenGL foundation:
 
@@ -13,7 +13,9 @@ The repository currently contains only the OpenGL foundation:
 - GLM 1.0.3 for graphics mathematics;
 - a resizable clear-colour window that closes with `ESC`;
 - a structured render loop with separate input, update, render, and timing jobs;
-- frame time and FPS reporting.
+- frame time and FPS reporting;
+- a checked shader loader;
+- a temporary coloured triangle proving the vertex/fragment pipeline works.
 
 There are deliberately no ships, shaders, meshes, transformations, animations, cannons, people, or environment modes yet.
 
@@ -28,7 +30,7 @@ cmake --build build --config Release
 
 Run `build/Release/ship_battle_simulator.exe`, or use `Shift+F5` in VS Code.
 
-The healthy startup output lists the OpenGL version, GLSL version, and renderer. A dark blue window should remain open until `ESC` is pressed. The console prints a frame-time and FPS report approximately once per second.
+The healthy startup output lists the OpenGL version, GLSL version, renderer, and a successful shader-link message. A coloured triangle should appear over the configured background until `ESC` is pressed. The console prints a frame-time and FPS report approximately once per second.
 
 ## Why each library exists
 
@@ -53,20 +55,26 @@ These are support libraries, not a game engine. Scene construction, transformati
 
 ## Planned phase order
 
-1. OpenGL window and libraries — **complete**.
-2. Stable render loop and frame time — **complete**.
-3. First shader and triangle.
-4. Model, view, and projection transformations.
-5. Reusable primitive meshes.
-6. Lighting and material comparison.
-7. One simple hierarchical ship.
-8. Player ship movement and steering.
-9. Animated sea and ship rocking.
-10. One manually aimable cannon and adjustable trajectory.
-11. One additional ship, then a small fleet using the same reusable ship code.
-12. Cannonball collision, reload state, and clear feedback.
-13. Simple transform-based crew roles: lookout, helm, cannon crew, and helpers.
-14. Optimization, teaching controls, and viva-friendly configuration.
-15. Environment modes, implemented last: sun, moonlight, rain, and winter.
+The full phase-by-phase plan lives in [docs/PHASE_PLAN.md](docs/PHASE_PLAN.md).
+Phases are numbered from `0` to match the explanation file names, and each one
+is a single concept with a single visual checkpoint.
+
+| Stage | Phases | Outcome |
+|---|---|---|
+| Done | 0-2 | Window, render loop, shader loader, test triangle |
+| A | 3-6 | Projection, view, model matrices, first cube, orbit camera |
+| B | 7-11 | Reusable cube/grid/cylinder/sphere meshes and runtime tessellation |
+| C | 12-19 | Ambient, diffuse, specular, materials, second light, Flat/Gouraud/Phong |
+| D | 20-23 | One static hierarchical ship and the hierarchy proof |
+| E | 24-25 | Keyboard-controlled player ship |
+| F | 26-29 | Animated sea, ship rocking, idle rigging motion |
+| G | 30-32 | Cannon aiming and the muzzle transform |
+| H | 33-35 | Ballistic firing, trajectory control, reload |
+| I | 36-38 | A second ship, then a reusable fleet and target selection |
+| J | 39-41 | Hit and splash resolution, pooled particles |
+| K | 42-46 | Crew roles: lookout, helmsman, cannon crew, helpers |
+| L | 47-48 | Teaching HUD and the optimization measurement pass |
+| M | 49-51 | Sun, moonlight, rain, and winter modes |
+| N | 52 | Report and viva rehearsal |
 
 This order may be refined in documentation, but environment modes remain the last functional feature as requested.

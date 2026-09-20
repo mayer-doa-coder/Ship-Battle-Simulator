@@ -1,10 +1,10 @@
 # AGENT.md - Ship Battle Simulator
 
-This repository is the incremental teaching build. The current source of truth is [README.md](README.md), and the current completed checkpoint is documented in [docs/PHASE_1_EXPLANATION.md](docs/PHASE_1_EXPLANATION.md).
+This repository is the incremental teaching build. The current source of truth is [README.md](README.md), the phase plan is [docs/PHASE_PLAN.md](docs/PHASE_PLAN.md), and the current completed checkpoint is documented in [docs/PHASE_2_EXPLANATION.md](docs/PHASE_2_EXPLANATION.md).
 
 ## Current phase boundary
 
-Phase 1 is the latest implemented phase. Do not add a triangle, shader, mesh, ship, animation, or gameplay feature unless the student explicitly asks to begin the next phase.
+Phase 2 is the latest implemented phase. The next phase is Phase 3 in [docs/PHASE_PLAN.md](docs/PHASE_PLAN.md): uniform setters plus the projection and view matrices, and nothing else. Do not add a model matrix, a camera, reusable meshes, ships, animation, or gameplay unless the student explicitly asks to begin the phase that owns it.
 
 ## Permanent project requirements
 
@@ -31,6 +31,6 @@ The finished project will contain:
 
 These requirements are future phases, not permission to implement them all at once.
 
-## Phase 1 checkpoint
+## Phase 2 checkpoint
 
-Phase 1 is complete only when the project configures, builds, opens a dark-blue OpenGL window, reports sensible frame timing approximately once per second, remains responsive, resizes correctly, and closes normally. Input, update, render, and reporting must remain separate and understandable.
+Phase 2 is complete only when the project configures, builds, compiles and links the two GLSL files with useful failure logs, displays one coloured triangle, reports sensible frame timing, remains responsive, and closes normally. The triangle remains a temporary test, not a reusable project mesh.

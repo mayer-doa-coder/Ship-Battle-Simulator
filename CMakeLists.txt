@@ -40,3 +40,11 @@ else()
         ${CMAKE_DL_LIBS}
     )
 endif()
+
+# Shader files are runtime data. Copy them beside the executable so launching
+# from VS Code or directly from the build folder uses the same relative paths.
+add_custom_command(TARGET ship_battle_simulator POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_SOURCE_DIR}/shaders"
+        "$<TARGET_FILE_DIR:ship_battle_simulator>/shaders"
+)

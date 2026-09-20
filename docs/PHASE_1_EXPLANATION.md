@@ -38,7 +38,7 @@ The changeable values remain together in `AppConfig` near the top of `src/main.c
 |---|---:|---|
 | `WINDOW_WIDTH` | `1280` | Changes the starting window width |
 | `WINDOW_HEIGHT` | `720` | Changes the starting window height |
-| `CLEAR_COLOR` | `(0.08, 0.16, 0.24)` | Changes the red, green, and blue background values |
+| `CLEAR_COLOR` | `(0.82, 0.66, 0.04)` | Changes the red, green, and blue background values |
 | `MAX_DELTA_TIME` | `0.10` seconds | Sets the largest movement step a future update may receive |
 | `REPORT_INTERVAL` | `1.0` second | Changes how often timing information is printed |
 | `VSYNC_INTERVAL` | `1` | `1` enables V-sync; `0` allows uncapped rendering |
