@@ -1,4 +1,4 @@
-// Ship Battle Simulator - Phase 5: the model matrix (translation and rotation).
+// Ship Battle Simulator - Phase 6: scale, and the T * R * S order.
 //
 // Every frame follows the same clear order:
 //   1. measure time;
@@ -7,9 +7,11 @@
 //   4. render the scene;
 //   5. show the frame and read window events.
 //
-// Phase 4 built a matrix that moves the triangle. This phase adds a second
-// matrix that turns it, and joins the two by multiplying them together. The
-// shader and the upload code are unchanged: one matrix can hold both jobs.
+// Phase 5 joined a move and a turn into one matrix. This phase adds a third
+// matrix that resizes the triangle, and makes the ORDER of the multiplication
+// the main lesson: press 'O' to build the same three matrices in reverse and
+// watch a spin turn into a smear. The shader and the upload code still do not
+// change: it is still one matrix in, multiplied by every vertex.
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -28,7 +30,7 @@ namespace AppConfig {
 // These values are grouped here so they are easy to find and change during a viva.
 constexpr int WINDOW_WIDTH = 1280;
 constexpr int WINDOW_HEIGHT = 720;
-constexpr const char* WINDOW_TITLE = "Ship Battle Simulator - Phase 5: Rotation";
+constexpr const char* WINDOW_TITLE = "Ship Battle Simulator - Phase 6: Scale & Order";
 constexpr const char* VERTEX_SHADER_PATH = "shaders/basic.vert";
 constexpr const char* FRAGMENT_SHADER_PATH = "shaders/basic.frag";
 
@@ -102,6 +104,20 @@ const glm::vec3 SPIN_AXIS(0.0f, 0.0f, 1.0f);              // Z: straight out of 
 
 } // namespace TriangleSpin
 
+namespace TriangleScale {
+
+// Phase 6: how the triangle's size pulses. The scale factor at any moment is
+//     factor = mid + amp * sin(PULSE_SPEED * now)
+// where mid is halfway between PULSE_MIN and PULSE_MAX, and amp is half their
+// difference. This keeps the factor inside [PULSE_MIN, PULSE_MAX] without a
+// clamp. A factor of 1.0 is the triangle's original size; below 1.0 shrinks
+// it, above 1.0 enlarges it.
+constexpr float PULSE_MIN = 0.5f;     // smallest size, as a fraction of the original
+constexpr float PULSE_MAX = 1.3f;     // largest size, as a fraction of the original
+constexpr float PULSE_SPEED = 1.2f;   // radians per second
+
+} // namespace TriangleScale
+
 // Time values needed by one frame. Keeping them together makes it clear which
 // time is absolute and which value describes only the previous frame.
 struct FrameClock {
@@ -129,6 +145,16 @@ struct SceneState {
     // glm::mat4(1.0f) is the identity matrix: it moves nothing. Writing the 1.0f
     // explicitly keeps this correct in every glm version.
     glm::mat4 triangleModel = glm::mat4(1.0f);
+
+    // Phase 6: toggled by the 'O' key. False builds the correct T * R * S
+    // order; true builds the same three matrices back to front, on purpose,
+    // so the two can be compared live.
+    bool reverseOrder = false;
+
+    // Remembers last frame's key state so a held-down key flips the toggle
+    // only once, on the frame it is first pressed, instead of roughly 120
+    // times a second for as long as it is held.
+    bool orderKeyWasDown = false;
 };
 
 static void glfwErrorCallback(int errorCode, const char* description)
@@ -143,10 +169,26 @@ static void framebufferSizeCallback(GLFWwindow* /*window*/, int width, int heigh
     glViewport(0, 0, width, height);
 }
 
-static void processInput(GLFWwindow* window)
+static void processInput(GLFWwindow* window, SceneState& scene)
 {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, GLFW_TRUE);
+
+    // Phase 6: 'O' compares the correct T * R * S order against the same
+    // three matrices multiplied back to front. glfwGetKey reports the key as
+    // PRESSED for every frame it is held down, so without the "was it already
+    // down" check the order would flip roughly 120 times a second while the
+    // key is held, which looks like it does nothing.
+    const bool orderKeyIsDown = glfwGetKey(window, GLFW_KEY_O) == GLFW_PRESS;
+    if (orderKeyIsDown && !scene.orderKeyWasDown) {
+        scene.reverseOrder = !scene.reverseOrder;
+        std::printf(
+            "[order] %s\n",
+            scene.reverseOrder
+                ? "S * R * T (reversed on purpose - watch it smear)"
+                : "T * R * S (correct)");
+    }
+    scene.orderKeyWasDown = orderKeyIsDown;
 }
 
 static void startClock(FrameClock& clock)
@@ -184,14 +226,39 @@ static void updateScene(SceneState& scene, float now, float deltaTime)
     const glm::mat4 spin =
         glm::rotate(glm::mat4(1.0f), spinAngle, TriangleSpin::SPIN_AXIS);
 
-    // Join the two by multiplying. Read the product from RIGHT to LEFT, because
-    // the vertex meets the rightmost matrix first:
-    //   1. spin  - turns the triangle around the origin, where its corners sit;
-    //   2. slide - then carries the turned triangle to its place on screen.
-    // Swapping the two would carry the triangle first and then turn the whole
-    // trip around the origin, so it would circle instead of spin. Phase 6 makes
-    // this order the main lesson.
-    scene.triangleModel = slide * spin;
+    // Phase 6: glm::scale(matrix, vector) works the same way again, but
+    // resizes instead of moving or turning. A pulsing factor between
+    // PULSE_MIN and PULSE_MAX, applied equally on x and y, keeps the
+    // triangle's proportions correct while it grows and shrinks.
+    const float scalePulseMid =
+        (TriangleScale::PULSE_MIN + TriangleScale::PULSE_MAX) * 0.5f;
+    const float scalePulseAmp =
+        (TriangleScale::PULSE_MAX - TriangleScale::PULSE_MIN) * 0.5f;
+    const float scaleFactor =
+        scalePulseMid + scalePulseAmp * std::sin(TriangleScale::PULSE_SPEED * now);
+    const glm::mat4 scaleMat =
+        glm::scale(glm::mat4(1.0f), glm::vec3(scaleFactor, scaleFactor, 1.0f));
+
+    // Join all three by multiplying. Read the product from RIGHT to LEFT,
+    // because the vertex meets the rightmost matrix first. The correct order
+    // is T * R * S:
+    //   1. scale - resize around the origin, where the corners sit;
+    //   2. spin  - turn the resized triangle around the origin;
+    //   3. slide - carry the turned, resized triangle to its place on screen.
+    // Each step only ever acts on the origin-centred result of the step
+    // before it, so the triangle grows and shrinks on the spot, spins on the
+    // spot, and both of those together slide as one rigid trip.
+    //
+    // 'O' rebuilds the same three matrices back to front: S * R * T. That
+    // order slides first, so a factor meant to resize the shape instead
+    // stretches how FAR it slides, and a spin meant to turn the shape instead
+    // swings the whole slid-out trip around the origin. The shape looks like
+    // it smears through a wide, pulsing loop instead of pulsing and spinning
+    // on the spot. Nothing here is broken; only the sequence of operations,
+    // read right to left, is different.
+    scene.triangleModel = scene.reverseOrder
+        ? scaleMat * spin * slide    // S * R * T, deliberately backwards
+        : slide * spin * scaleMat;   // T * R * S, correct
 
     // deltaTime is for input-driven motion such as steering (a later phase).
     // This cast tells the compiler that leaving it unused is intentional.
@@ -271,8 +338,7 @@ static void renderScene(ShaderProgram& shader, const TriangleGpu& triangle, cons
 
     // Clear both buffers every frame. The colour buffer holds visible pixels;
     // the depth buffer will decide which 3D surfaces are closest in later phases.
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-    ;
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     // use() first: a uniform is written into whichever program is currently
     // in use, so setting it before use() would send the value nowhere.
@@ -394,7 +460,7 @@ int main()
         return 1;
     }
 
-    std::printf("Phase 5 ready. Press ESC to close.\n");
+    std::printf("Phase 6 ready. Press O to compare transform order. Press ESC to close.\n");
 
     SceneState scene;
 
@@ -406,7 +472,7 @@ int main()
 
     while (glfwWindowShouldClose(window) == GLFW_FALSE) {
         updateClock(clock);
-        processInput(window);
+        processInput(window, scene);
 
         updateScene(scene, clock.now, clock.deltaTime);
         renderScene(shader, triangle, scene);

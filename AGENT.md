@@ -1,10 +1,10 @@
 # AGENT.md - Ship Battle Simulator
 
-This repository is the incremental teaching build. The current source of truth is [README.md](README.md), the phase plan is [docs/PHASE_PLAN.md](docs/PHASE_PLAN.md), and the current completed checkpoint is documented in [docs/PHASE_5_EXPLANATION.md](docs/PHASE_5_EXPLANATION.md).
+This repository is the incremental teaching build. The current source of truth is [README.md](README.md), the phase plan is [docs/PHASE_PLAN.md](docs/PHASE_PLAN.md), and the current completed checkpoint is documented in [docs/PHASE_6_EXPLANATION.md](docs/PHASE_6_EXPLANATION.md).
 
 ## Current phase boundary
 
-Phase 5 is the latest implemented phase. The next phase is Phase 6 in [docs/PHASE_PLAN.md](docs/PHASE_PLAN.md): `glm::scale` and the full `T * R * S` order, with a key that builds the product backwards on purpose, and nothing else. View and projection begin at Phase 7, the first 3D object at Phase 10, and reusable meshes at Phase 14. Do not add any of them unless the student explicitly asks to begin the phase that owns it.
+Phase 6 is the latest implemented phase. The next phase is Phase 7 in [docs/PHASE_PLAN.md](docs/PHASE_PLAN.md): `uView` from `glm::lookAt` and `uProjection` from `glm::perspective`, introduced together, and nothing else. This is a milestone phase (marked `*` in the plan) because a view matrix alone or a projection matrix alone leaves nothing visible. The first 3D object is Phase 10, and reusable meshes begin at Phase 14. Do not add any of them unless the student explicitly asks to begin the phase that owns it.
 
 ## Permanent project requirements
 
@@ -31,6 +31,6 @@ The finished project will contain:
 
 These requirements are future phases, not permission to implement them all at once.
 
-## Phase 5 checkpoint
+## Phase 6 checkpoint
 
-Phase 5 is complete only when the project builds in Debug and Release with no compiler warnings, both shaders link with no missing-uniform warning, the triangle spins under `uModel` while it slides and never disappears during a normal run, changing `TriangleSpin::SPIN_SPEED` changes the spin with no shader edit, swapping the multiplication order to `spin * slide` makes the triangle circle instead of spin, and the window still reports frame timing and closes normally. The triangle remains a temporary test, not a reusable project mesh.
+Phase 6 is complete only when the project builds in Debug and Release with no compiler warnings, both shaders link with no missing-uniform warning, the triangle slides, spins, and pulses in size together by default, pressing `O` visibly changes the motion to a wide smear and prints the reversed order, pressing `O` again restores the correct motion, holding `O` down produces exactly one toggle per press rather than one per frame, and the window still reports frame timing and closes normally. The triangle remains a temporary test, not a reusable project mesh.

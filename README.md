@@ -2,7 +2,7 @@
 
 This is the step-by-step teaching version of `Broadside`. It will eventually demonstrate the same naval battle, but every phase must stay small enough to explain, modify, and demonstrate independently.
 
-## Current progress: Phase 5
+## Current progress: Phase 6
 
 The repository currently contains only the OpenGL foundation:
 
@@ -17,9 +17,10 @@ The repository currently contains only the OpenGL foundation:
 - a checked shader loader;
 - a temporary coloured triangle proving the vertex/fragment pipeline works;
 - uniform setters that send values from C++ into the running shader;
-- a model matrix, built from the clock each frame, that slides and spins the triangle.
+- a model matrix, built from the clock each frame, that slides, spins, and pulses the triangle in size;
+- an `O` key that rebuilds the same matrices in reverse, to compare the correct transform order against a deliberately wrong one.
 
-There are deliberately no ships, reusable meshes, camera, lighting, cannons, people, or environment modes yet. The only transformations are a translation and a rotation.
+There are deliberately no ships, reusable meshes, camera, lighting, cannons, people, or environment modes yet. The only transformations are a translation, a rotation, and a scale.
 
 ## Build on Windows
 
@@ -63,8 +64,8 @@ is a single concept with a single visual checkpoint.
 
 | Stage | Phases | Outcome |
 |---|---|---|
-| Done | 0-5 | Window, render loop, shader loader, test triangle, uniforms, the model matrix (translation and rotation) |
-| A | 6-13 | Scale, view/projection matrices, depth, indices, the first cube, culling, orbit camera |
+| Done | 0-6 | Window, render loop, shader loader, test triangle, uniforms, the model matrix (translate, rotate, scale, and the T * R * S order) |
+| A | 7-13 | View/projection matrices, depth, indices, the first cube, culling, orbit camera |
 | B | 14-25 | Reusable cube/quad/grid/cylinder/sphere meshes, smooth normals, runtime tessellation |
 | C | 26-33 | Ambient, diffuse, specular, materials, second light, Flat/Gouraud/Phong |
 | D | 34-37 | One static hierarchical ship and the hierarchy proof |
