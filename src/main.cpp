@@ -1,4 +1,4 @@
-// Ship Battle Simulator - Phase 9: indexed drawing.
+// Ship Battle Simulator - Phase 10: the first real 3D object - a cube.
 //
 // Every frame follows the same clear order:
 //   1. measure time;
@@ -7,13 +7,14 @@
 //   4. render the scene;
 //   5. show the frame and read window events.
 //
-// Every shape so far has been listed one corner at a time and drawn with
-// glDrawArrays. That works for a triangle, which has no repeated corners, but
-// a quad is two triangles sharing an edge - two of its four corners would
-// have to be typed out twice. This phase adds a small, static, colourful quad
-// built from just 4 vertices and 6 INDICES: small numbers that say which
-// vertex to reuse, and where. Nothing about the two triangles from Phase 8
-// changes; the quad is a new, third object, reusing everything already built.
+// Phase 9's quad proved indexed drawing on one flat face. A cube is six of
+// those, glued into a solid box. It needs 24 vertices - 4 PER FACE, not 8
+// shared corners - so each face can carry its own flat colour without
+// blending into its neighbours at the edges, and 36 indices - 6 per face,
+// the same {corner, corner, corner, corner, corner, corner} pattern the quad
+// already used, six times over. It spins on a tilted axis so every face is
+// seen in turn, which is the real proof that this is a solid 3D object and
+// not six flat squares glued together by accident.
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -32,7 +33,7 @@ namespace AppConfig {
 // These values are grouped here so they are easy to find and change during a viva.
 constexpr int WINDOW_WIDTH = 1280;
 constexpr int WINDOW_HEIGHT = 720;
-constexpr const char* WINDOW_TITLE = "Ship Battle Simulator - Phase 9: Indexed Quad";
+constexpr const char* WINDOW_TITLE = "Ship Battle Simulator - Phase 10: The Cube";
 constexpr const char* VERTEX_SHADER_PATH = "shaders/basic.vert";
 constexpr const char* FRAGMENT_SHADER_PATH = "shaders/basic.frag";
 
@@ -191,9 +192,9 @@ namespace QuadConfig {
 //   3: bottom-left (yellow)  2: bottom-right (blue)
 constexpr float VERTICES[] = {
     -0.4f,  0.4f, 0.0f,   1.0f, 0.0f, 0.0f,   // 0: top-left,     red
-     0.4f,  0.4f, 0.0f,   0.0f, 1.0f, 0.0f,   // 1: top-right,    green
-     0.4f, -0.4f, 0.0f,   0.0f, 0.0f, 1.0f,   // 2: bottom-right, blue
-    -0.4f, -0.4f, 0.0f,   1.0f, 1.0f, 0.0f,   // 3: bottom-left,  yellow
+     0.4f,  0.4f, 0.0f,   0.5f, 1.0f, 0.0f,   // 1: top-right,    green
+     0.4f, -0.4f, 0.0f,   0.1f, 0.7f, 1.0f,   // 2: bottom-right, blue
+    -0.4f, -0.4f, 0.0f,   1.0f, 1.0f, 0.9f,   // 3: bottom-left,  yellow
 };
 
 // Two triangles, sharing the diagonal that runs from corner 2 to corner 0.
@@ -220,6 +221,98 @@ constexpr int COLOR_COMPONENTS = 3;
 const glm::vec3 POSITION(-1.8f, 0.0f, 0.0f);
 
 } // namespace QuadConfig
+
+namespace CubeConfig {
+
+// Phase 10: the cube's size. It is the ONLY dimension this cube has - every
+// face reaches exactly this far from the centre on every axis, so the cube
+// stays a true cube. Doubling it makes the cube twice as wide, tall, AND
+// deep at once. Giving width, height, and depth their own separate values
+// waits until Phase 16's reusable, parameterised mesh generators.
+constexpr float HALF_SIZE = 0.5f;
+
+// 24 vertices - 4 for EACH of the 6 faces, not 8 shared corners. A real cube
+// only has 8 corners, but a corner where three faces meet cannot share one
+// vertex between those faces here, because each face needs its OWN flat
+// colour, and a shared vertex can only carry one colour. Paying for that
+// with 24 vertices instead of 8 is a small, deliberate cost.
+//
+// Every face lists its 4 corners in the same order the quad already used:
+// a CCW (counter-clockwise) loop AS SEEN FROM OUTSIDE the cube, which is
+// what GL_CULL_FACE needs to keep a face visible instead of discarding it.
+constexpr float VERTICES[] = {
+    // +Z face (front, facing the camera) - blue
+    -HALF_SIZE, -HALF_SIZE,  HALF_SIZE,   0.0f, 0.0f, 1.0f,
+     HALF_SIZE, -HALF_SIZE,  HALF_SIZE,   0.0f, 0.0f, 1.0f,
+     HALF_SIZE,  HALF_SIZE,  HALF_SIZE,   0.0f, 0.0f, 1.0f,
+    -HALF_SIZE,  HALF_SIZE,  HALF_SIZE,   0.0f, 0.0f, 1.0f,
+
+    // -Z face (back) - yellow
+     HALF_SIZE, -HALF_SIZE, -HALF_SIZE,   1.0f, 1.0f, 0.0f,
+    -HALF_SIZE, -HALF_SIZE, -HALF_SIZE,   1.0f, 1.0f, 0.0f,
+    -HALF_SIZE,  HALF_SIZE, -HALF_SIZE,   1.0f, 1.0f, 0.0f,
+     HALF_SIZE,  HALF_SIZE, -HALF_SIZE,   1.0f, 1.0f, 0.0f,
+
+    // +X face (right) - red
+     HALF_SIZE, -HALF_SIZE,  HALF_SIZE,   1.0f, 0.0f, 0.0f,
+     HALF_SIZE, -HALF_SIZE, -HALF_SIZE,   1.0f, 0.0f, 0.0f,
+     HALF_SIZE,  HALF_SIZE, -HALF_SIZE,   1.0f, 0.0f, 0.0f,
+     HALF_SIZE,  HALF_SIZE,  HALF_SIZE,   1.0f, 0.0f, 0.0f,
+
+    // -X face (left) - cyan
+    -HALF_SIZE, -HALF_SIZE, -HALF_SIZE,   0.0f, 1.0f, 1.0f,
+    -HALF_SIZE, -HALF_SIZE,  HALF_SIZE,   0.0f, 1.0f, 1.0f,
+    -HALF_SIZE,  HALF_SIZE,  HALF_SIZE,   0.0f, 1.0f, 1.0f,
+    -HALF_SIZE,  HALF_SIZE, -HALF_SIZE,   0.0f, 1.0f, 1.0f,
+
+    // +Y face (top) - green
+    -HALF_SIZE,  HALF_SIZE,  HALF_SIZE,   0.0f, 1.0f, 0.0f,
+     HALF_SIZE,  HALF_SIZE,  HALF_SIZE,   0.0f, 1.0f, 0.0f,
+     HALF_SIZE,  HALF_SIZE, -HALF_SIZE,   0.0f, 1.0f, 0.0f,
+    -HALF_SIZE,  HALF_SIZE, -HALF_SIZE,   0.0f, 1.0f, 0.0f,
+
+    // -Y face (bottom) - magenta
+    -HALF_SIZE, -HALF_SIZE, -HALF_SIZE,   1.0f, 0.0f, 1.0f,
+     HALF_SIZE, -HALF_SIZE, -HALF_SIZE,   1.0f, 0.0f, 1.0f,
+     HALF_SIZE, -HALF_SIZE,  HALF_SIZE,   1.0f, 0.0f, 1.0f,
+    -HALF_SIZE, -HALF_SIZE,  HALF_SIZE,   1.0f, 0.0f, 1.0f,
+};
+
+// 36 indices - 6 per face, following the exact {corner,corner,corner,
+// corner,corner,corner} pattern QuadConfig::INDICES already used, once for
+// each face's own 4 vertices. Face f's vertices start at row f*4, so its
+// two triangles are (f*4+0, f*4+1, f*4+2) and (f*4+2, f*4+3, f*4+0).
+constexpr unsigned int INDICES[] = {
+     0,  1,  2,   2,  3,  0,    // +Z face
+     4,  5,  6,   6,  7,  4,    // -Z face
+     8,  9, 10,  10, 11,  8,    // +X face
+    12, 13, 14,  14, 15, 12,    // -X face
+    16, 17, 18,  18, 19, 16,    // +Y face
+    20, 21, 22,  22, 23, 20,    // -Y face
+};
+
+constexpr int VERTEX_COUNT = 24;
+constexpr int INDEX_COUNT = 36;
+constexpr int FLOATS_PER_VERTEX = 6;
+constexpr int POSITION_COMPONENTS = 3;
+constexpr int COLOR_COMPONENTS = 3;
+
+// Phase 10: where the cube sits, away from the triangles and mirrored across
+// the quad so all three objects are easy to tell apart on screen.
+const glm::vec3 POSITION(1.8f, 0.0f, 0.0f);
+
+// How the cube turns. The axis is deliberately NOT one of X, Y, or Z alone -
+// a tilted axis means every face eventually faces the camera as the cube
+// spins, which is the real proof that this is a solid 3D object and not six
+// flat squares that happen to be glued together.
+constexpr float SPIN_SPEED = 0.6f;   // radians per second
+
+// glm::rotate expects its axis to already be unit length; glm::normalize is
+// not a compile-time function, so this cannot be constexpr like SPIN_SPEED,
+// but it only ever runs once, at program startup.
+const glm::vec3 SPIN_AXIS = glm::normalize(glm::vec3(0.4f, 1.0f, 0.3f));
+
+} // namespace CubeConfig
 
 // Time values needed by one frame. Keeping them together makes it clear which
 // time is absolute and which value describes only the previous frame.
@@ -252,6 +345,17 @@ struct QuadGpu {
     GLuint ebo = 0;
 };
 
+// Phase 10: the cube's GPU handles. Same shape as QuadGpu - a VAO, a VBO, and
+// an EBO - because a cube is drawn exactly the same way a quad is, just with
+// more vertices and more indices. A shared `Mesh` type that both of these
+// could use instead of two near-identical structs arrives in Phase 14, once
+// there is enough repetition to justify it.
+struct CubeGpu {
+    GLuint vao = 0;
+    GLuint vbo = 0;
+    GLuint ebo = 0;
+};
+
 // Data that changes as the scene changes. updateScene() writes it and
 // renderScene() reads it, so neither function needs to know about the other.
 struct SceneState {
@@ -277,6 +381,11 @@ struct SceneState {
     // else here: renderScene() should only ever read scene state, never
     // calculate it.
     glm::mat4 quadModel = glm::mat4(1.0f);
+
+    // Phase 10: the cube's model matrix. Unlike the quad, this one DOES
+    // depend on 'now' - the cube spins - so it earns being rebuilt every
+    // frame rather than just sitting there out of habit.
+    glm::mat4 cubeModel = glm::mat4(1.0f);
 
     // Phase 8: toggled by the 'D' key. True matches the driver's normal
     // behaviour: the nearer fragment wins regardless of draw order. False
@@ -435,6 +544,20 @@ static void updateScene(
 
     // Phase 9: the quad's matrix is a single, unmoving translation.
     scene.quadModel = glm::translate(glm::mat4(1.0f), QuadConfig::POSITION);
+
+    // Phase 10: the cube's matrix is T * R, the same pattern Phase 5
+    // introduced: spin the cube around its own centre first (the origin,
+    // where every one of its 24 vertices is measured from), THEN carry the
+    // already-turning cube out to its resting place. Doing it the other way
+    // round would make the cube orbit CubeConfig::POSITION instead of
+    // spinning on the spot - exactly Phase 5's wobble lesson, at a larger
+    // scale.
+    const float cubeSpinAngle = CubeConfig::SPIN_SPEED * now;
+    const glm::mat4 cubeSpin =
+        glm::rotate(glm::mat4(1.0f), cubeSpinAngle, CubeConfig::SPIN_AXIS);
+    const glm::mat4 cubeSlide =
+        glm::translate(glm::mat4(1.0f), CubeConfig::POSITION);
+    scene.cubeModel = cubeSlide * cubeSpin;
 
     // Phase 7: glm::lookAt(eye, target, up) builds the view matrix from three
     // vectors instead of a translate/rotate/scale recipe. It re-measures every
@@ -603,12 +726,89 @@ static void destroyQuad(QuadGpu& quad)
     quad.vao = 0;
 }
 
+// Line for line the same recipe as createQuad(): more vertices and indices,
+// but the exact same VAO/VBO/EBO steps, in the exact same order.
+static bool createCube(CubeGpu& cube)
+{
+    glGenVertexArrays(1, &cube.vao);
+    glGenBuffers(1, &cube.vbo);
+    glGenBuffers(1, &cube.ebo);
+
+    glBindVertexArray(cube.vao);
+
+    glBindBuffer(GL_ARRAY_BUFFER, cube.vbo);
+    glBufferData(
+        GL_ARRAY_BUFFER,
+        sizeof(CubeConfig::VERTICES),
+        CubeConfig::VERTICES,
+        GL_STATIC_DRAW);
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, cube.ebo);
+    glBufferData(
+        GL_ELEMENT_ARRAY_BUFFER,
+        sizeof(CubeConfig::INDICES),
+        CubeConfig::INDICES,
+        GL_STATIC_DRAW);
+
+    const GLsizei stride = static_cast<GLsizei>(
+        CubeConfig::FLOATS_PER_VERTEX * sizeof(float));
+
+    glVertexAttribPointer(
+        0,
+        CubeConfig::POSITION_COMPONENTS,
+        GL_FLOAT,
+        GL_FALSE,
+        stride,
+        nullptr);
+    glEnableVertexAttribArray(0);
+
+    glVertexAttribPointer(
+        1,
+        CubeConfig::COLOR_COMPONENTS,
+        GL_FLOAT,
+        GL_FALSE,
+        stride,
+        reinterpret_cast<const void*>(
+            CubeConfig::POSITION_COMPONENTS * sizeof(float)));
+    glEnableVertexAttribArray(1);
+
+    // Same rule as createQuad(): unbind the VBO, but not the EBO, and unbind
+    // the VAO last so the EBO binding it recorded survives.
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+
+    const GLenum error = glGetError();
+    if (error != GL_NO_ERROR) {
+        std::fprintf(stderr, "[cube] OpenGL setup error: 0x%04X\n", error);
+        return false;
+    }
+
+    return cube.vao != 0 && cube.vbo != 0 && cube.ebo != 0;
+}
+
+static void destroyCube(CubeGpu& cube)
+{
+    if (cube.ebo != 0)
+        glDeleteBuffers(1, &cube.ebo);
+
+    if (cube.vbo != 0)
+        glDeleteBuffers(1, &cube.vbo);
+
+    if (cube.vao != 0)
+        glDeleteVertexArrays(1, &cube.vao);
+
+    cube.ebo = 0;
+    cube.vbo = 0;
+    cube.vao = 0;
+}
+
 // The shader is no longer passed as const: setting a uniform changes the
 // shader program, so this function can no longer promise to leave it alone.
 static void renderScene(
     ShaderProgram& shader,
     const TriangleGpu& triangle,
     const QuadGpu& quad,
+    const CubeGpu& cube,
     const SceneState& scene)
 {
     glClearColor(
@@ -673,6 +873,17 @@ static void renderScene(
     // glDrawArrays does. The last argument is nullptr because the indices
     // live in a real GPU buffer, at offset 0 - it is not a CPU array pointer.
     glDrawElements(GL_TRIANGLES, QuadConfig::INDEX_COUNT, GL_UNSIGNED_INT, nullptr);
+
+    // Draw 4: the cube. A third VAO, for the same reason the quad needed a
+    // second one - the triangles' VAO and the quad's VAO each only know
+    // about their own buffers.
+    //
+    // uTint stays (1, 1, 1): each of the cube's 24 vertices already carries
+    // its own face colour, so nothing should filter it.
+    glBindVertexArray(cube.vao);
+    shader.setVec3("uTint", glm::vec3(1.0f, 1.0f, 1.0f));
+    shader.setMat4("uModel", scene.cubeModel);
+    glDrawElements(GL_TRIANGLES, CubeConfig::INDEX_COUNT, GL_UNSIGNED_INT, nullptr);
 
     glBindVertexArray(0);
 }
@@ -797,7 +1008,19 @@ int main()
         return 1;
     }
 
-    std::printf("Phase 9 ready. Press D to toggle depth test, O to compare transform order. Press ESC to close.\n");
+    CubeGpu cube;
+    if (!createCube(cube)) {
+        std::fprintf(stderr, "Failed to create the cube.\n");
+        destroyCube(cube);
+        destroyQuad(quad);
+        destroyTriangle(triangle);
+        shader.destroy();
+        glfwDestroyWindow(window);
+        glfwTerminate();
+        return 1;
+    }
+
+    std::printf("Phase 10 ready. Press D to toggle depth test, O to compare transform order. Press ESC to close.\n");
 
     SceneState scene;
 
@@ -817,7 +1040,7 @@ int main()
         glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
 
         updateScene(scene, clock.now, clock.deltaTime, framebufferWidth, framebufferHeight);
-        renderScene(shader, triangle, quad, scene);
+        renderScene(shader, triangle, quad, cube, scene);
 
         glfwSwapBuffers(window);
         glfwPollEvents();
@@ -826,6 +1049,7 @@ int main()
     }
 
     // OpenGL resources must be deleted while the context still exists.
+    destroyCube(cube);
     destroyQuad(quad);
     destroyTriangle(triangle);
     shader.destroy();
