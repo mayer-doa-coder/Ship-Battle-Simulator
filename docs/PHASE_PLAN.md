@@ -31,11 +31,13 @@ Phase 52 is now Phase 66.
 | 5 | `glm::rotate` about Z from `now`, joined to the slide as `slide * spin`; the turn is about the origin | [PHASE_5_EXPLANATION.md](PHASE_5_EXPLANATION.md) |
 | 6 | `glm::scale` joined as `slide * spin * scaleMat`; an edge-detected `O` key rebuilds it backwards (`scaleMat * spin * slide`) to compare | [PHASE_6_EXPLANATION.md](PHASE_6_EXPLANATION.md) |
 | 7 | `uView` from `glm::lookAt` and `uProjection` from `glm::perspective`, added together; the triangle gains real world-space depth motion | [PHASE_7_EXPLANATION.md](PHASE_7_EXPLANATION.md) |
+| 8 | The same VAO drawn twice at different depths; an edge-detected `D` key switches `GL_DEPTH_TEST` off and on to prove which one wins and why | [PHASE_8_EXPLANATION.md](PHASE_8_EXPLANATION.md) |
+| 9 | A static quad with an EBO: 4 unique vertices, 6 `glDrawElements` indices, no duplicated corners | [PHASE_9_EXPLANATION.md](PHASE_9_EXPLANATION.md) |
 
 Current source: `src/main.cpp`, `src/Shader.h`, `shaders/basic.vert`,
 `shaders/basic.frag`. There are no meshes, lights, ships, or gameplay yet. The
-triangle now moves through a real 3D scene with a fixed camera: model, view,
-and projection matrices all multiply together in the vertex shader.
+scene draws two triangles and one indexed quad; depth testing can be switched
+off live to compare the triangles' two possible results.
 
 ## How to read the tables
 
@@ -50,7 +52,7 @@ and projection matrices all multiply together in the vertex shader.
 
 ## How far to work right now
 
-**Phase 8 to Phase 25** - the rest of Stage A, then all of Stage B. Phases 3 to 7 are
+**Phase 10 to Phase 25** - the rest of Stage A, then all of Stage B. Phases 3 to 9 are
 done. This range is the answer to "I want to work until I am creating 3D
 objects".
 
@@ -91,8 +93,8 @@ own and each with its own debugging method. They are now four phases.
 | 5 **done** | `glm::rotate` about the Z axis with `angle = now` | The triangle spins. Moving it off centre first makes it **orbit** instead, which is the lesson: rotation happens about the origin | Change the spin speed or the axis | B3 |
 | 6 **done** | `glm::scale`, and the `T * R * S` order, with a key that builds the product backwards on purpose | A sliding, spinning, pulsing triangle; the wrong order visibly smears or orbits | Swap two matrices and explain the result | B3 |
 | 7 * **done** | `uView` from `glm::lookAt` and `uProjection` from `glm::perspective`, introduced **together** | Pushing the triangle along `-Z` now makes it shrink instead of vanishing | Change the field of view or the near/far planes | B3 |
-| 8 (o) | `GL_DEPTH_TEST` proved with two overlapping triangles at different `z`, and a key to switch it off | With depth off the later draw wins; with depth on the nearer one wins | Swap the draw order | B3 |
-| 9 | Indexed drawing: an EBO and `glDrawElements`, used to build a quad from 4 vertices and 6 indices | A quad made of two triangles that share an edge, with no duplicated corner data | Change one index and see the tear | B4 |
+| 8 (o) **done** | `GL_DEPTH_TEST` proved with two overlapping triangles at different `z`, and a key to switch it off | With depth off the later draw wins; with depth on the nearer one wins | Swap the draw order | B3 |
+| 9 **done** | Indexed drawing: an EBO and `glDrawElements`, used to build a quad from 4 vertices and 6 indices | A quad made of two triangles that share an edge, with no duplicated corner data | Change one index and see the tear | B4 |
 | 10 * | The cube: 24 vertices, 36 indices, one face colour each | A solid 3D cube turning in space | Change a cube dimension or a face colour | B3 |
 | 11 | Winding order and `glEnable(GL_CULL_FACE)`, plus a wireframe key | Reversing one face's indices leaves a visible hole in the cube; the wireframe view proves the face is still there | Reverse one face's winding and find the hole | B4 |
 | 12 | `src/Camera.h`: `radius`, `yaw`, `pitch`, and the spherical-to-Cartesian position, driven by the arrow keys first | The cube can be inspected from any angle | Change the orbit speed | B3 |

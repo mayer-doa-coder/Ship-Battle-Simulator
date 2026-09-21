@@ -2,7 +2,7 @@
 
 This is the step-by-step teaching version of `Broadside`. It will eventually demonstrate the same naval battle, but every phase must stay small enough to explain, modify, and demonstrate independently.
 
-## Current progress: Phase 7
+## Current progress: Phase 9
 
 The repository currently contains only the OpenGL foundation:
 
@@ -19,9 +19,11 @@ The repository currently contains only the OpenGL foundation:
 - uniform setters that send values from C++ into the running shader;
 - a model matrix, built from the clock each frame, that slides, spins, and pulses the triangle in size;
 - an `O` key that rebuilds the same matrices in reverse, to compare the correct transform order against a deliberately wrong one;
-- a fixed camera with real view and projection matrices, so the triangle now moves in genuine 3D space, keeps its true proportions at any window size, and grows or shrinks correctly with distance.
+- a fixed camera with real view and projection matrices, so the triangle now moves in genuine 3D space, keeps its true proportions at any window size, and grows or shrinks correctly with distance;
+- the same triangle mesh drawn twice at different depths, and a `D` key that switches `GL_DEPTH_TEST` off and on to prove the nearer one wins only because depth testing is on;
+- a small static quad built from 4 vertices and 6 indices with an EBO, proving that a shared corner can be uploaded once and reused, instead of being typed out twice.
 
-There are deliberately no ships, reusable meshes, an orbiting camera, lighting, cannons, people, or environment modes yet. The transformations are a translation, a rotation, a scale, and now a real camera.
+There are deliberately no ships, reusable meshes, an orbiting camera, lighting, cannons, people, or environment modes yet. The transformations are a translation, a rotation, a scale, and a real camera. This is the first phase to draw more than one object, and the first to use indexed drawing.
 
 ## Build on Windows
 
@@ -65,8 +67,8 @@ is a single concept with a single visual checkpoint.
 
 | Stage | Phases | Outcome |
 |---|---|---|
-| Done | 0-7 | Window, render loop, shader loader, test triangle, uniforms, the model matrix (translate, rotate, scale, and the T * R * S order), a real camera with view and projection matrices |
-| A | 8-13 | Depth testing, indexed drawing, the first cube, culling, orbit camera |
+| Done | 0-9 | Window, render loop, shader loader, test triangle, uniforms, the model matrix (translate, rotate, scale, and the T * R * S order), a real camera with view and projection matrices, depth testing proved with two overlapping draws, indexed drawing with an EBO |
+| A | 10-13 | The first cube, culling, orbit camera |
 | B | 14-25 | Reusable cube/quad/grid/cylinder/sphere meshes, smooth normals, runtime tessellation |
 | C | 26-33 | Ambient, diffuse, specular, materials, second light, Flat/Gouraud/Phong |
 | D | 34-37 | One static hierarchical ship and the hierarchy proof |
