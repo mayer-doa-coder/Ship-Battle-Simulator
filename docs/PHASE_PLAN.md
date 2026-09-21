@@ -34,11 +34,13 @@ Phase 52 is now Phase 66.
 | 8 | The same VAO drawn twice at different depths; an edge-detected `D` key switches `GL_DEPTH_TEST` off and on to prove which one wins and why | [PHASE_8_EXPLANATION.md](PHASE_8_EXPLANATION.md) |
 | 9 | A static quad with an EBO: 4 unique vertices, 6 `glDrawElements` indices, no duplicated corners | [PHASE_9_EXPLANATION.md](PHASE_9_EXPLANATION.md) |
 | 10 * | A spinning cube: 24 vertices (4 per face, so each face keeps its own flat colour), 36 indices, a tilted spin axis so every face is eventually seen | [PHASE_10_EXPLANATION.md](PHASE_10_EXPLANATION.md) |
+| 11 | Winding order and `GL_CULL_FACE` named explicitly; an edge-detected `W` key shows wireframe with culling off, so a deliberately reversed face's outline can be proven still there | [PHASE_11_EXPLANATION.md](PHASE_11_EXPLANATION.md) |
 
 Current source: `src/main.cpp`, `src/Shader.h`, `shaders/basic.vert`,
 `shaders/basic.frag`. There are no meshes, lights, ships, or gameplay yet. The
 scene draws two triangles, one indexed quad, and one indexed, spinning cube -
-the project's first solid 3D object.
+the project's first solid 3D object - and both `GL_DEPTH_TEST` and
+`GL_CULL_FACE` can now be switched off live to see what each one was doing.
 
 ## How to read the tables
 
@@ -53,7 +55,7 @@ the project's first solid 3D object.
 
 ## How far to work right now
 
-**Phase 11 to Phase 25** - the rest of Stage A, then all of Stage B. Phases 3 to 10 are
+**Phase 12 to Phase 25** - the rest of Stage A, then all of Stage B. Phases 3 to 11 are
 done. This range is the answer to "I want to work until I am creating 3D
 objects".
 
@@ -97,7 +99,7 @@ own and each with its own debugging method. They are now four phases.
 | 8 (o) **done** | `GL_DEPTH_TEST` proved with two overlapping triangles at different `z`, and a key to switch it off | With depth off the later draw wins; with depth on the nearer one wins | Swap the draw order | B3 |
 | 9 **done** | Indexed drawing: an EBO and `glDrawElements`, used to build a quad from 4 vertices and 6 indices | A quad made of two triangles that share an edge, with no duplicated corner data | Change one index and see the tear | B4 |
 | 10 * **done** | The cube: 24 vertices, 36 indices, one face colour each | A solid 3D cube turning in space | Change a cube dimension or a face colour | B3 |
-| 11 | Winding order and `glEnable(GL_CULL_FACE)`, plus a wireframe key | Reversing one face's indices leaves a visible hole in the cube; the wireframe view proves the face is still there | Reverse one face's winding and find the hole | B4 |
+| 11 **done** | Winding order and `glEnable(GL_CULL_FACE)`, plus a wireframe key | Reversing one face's indices leaves a visible hole in the cube; the wireframe view proves the face is still there | Reverse one face's winding and find the hole | B4 |
 | 12 | `src/Camera.h`: `radius`, `yaw`, `pitch`, and the spherical-to-Cartesian position, driven by the arrow keys first | The cube can be inspected from any angle | Change the orbit speed | B3 |
 | 13 * | GLFW cursor and scroll callbacks: drag to orbit, wheel to zoom, pitch clamped to 89 degrees, radius clamped | Dragging orbits smoothly and the view never flips over at the poles | Change the zoom limits | B3 |
 

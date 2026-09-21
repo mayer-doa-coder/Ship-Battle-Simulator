@@ -2,7 +2,7 @@
 
 This is the step-by-step teaching version of `Broadside`. It will eventually demonstrate the same naval battle, but every phase must stay small enough to explain, modify, and demonstrate independently.
 
-## Current progress: Phase 10
+## Current progress: Phase 11
 
 The repository currently contains only the OpenGL foundation:
 
@@ -22,9 +22,10 @@ The repository currently contains only the OpenGL foundation:
 - a fixed camera with real view and projection matrices, so the triangle now moves in genuine 3D space, keeps its true proportions at any window size, and grows or shrinks correctly with distance;
 - the same triangle mesh drawn twice at different depths, and a `D` key that switches `GL_DEPTH_TEST` off and on to prove the nearer one wins only because depth testing is on;
 - a small static quad built from 4 vertices and 6 indices with an EBO, proving that a shared corner can be uploaded once and reused, instead of being typed out twice;
-- the project's first real 3D object: a solid, spinning cube built from 24 vertices and 36 indices, one flat colour per face, correctly wound on all six sides.
+- the project's first real 3D object: a solid, spinning cube built from 24 vertices and 36 indices, one flat colour per face, correctly wound on all six sides;
+- a `W` key that shows every triangle's edges and switches face culling off, so a face a winding mistake would normally hide silently can be proven to still exist.
 
-There are deliberately no reusable mesh generators, wireframe view, orbiting camera, lighting, ships, cannons, people, or environment modes yet. The transformations are a translation, a rotation, a scale, and a real camera. This is the first phase to draw more than one object, the first to use indexed drawing, and the first genuinely 3D solid.
+There are deliberately no reusable mesh generators, orbiting camera, lighting, ships, cannons, people, or environment modes yet. The transformations are a translation, a rotation, a scale, and a real camera. This is the first phase to draw more than one object, the first to use indexed drawing, the first genuinely 3D solid, and the first to explain winding order and face culling directly.
 
 ## Build on Windows
 
@@ -68,8 +69,8 @@ is a single concept with a single visual checkpoint.
 
 | Stage | Phases | Outcome |
 |---|---|---|
-| Done | 0-10 | Window, render loop, shader loader, test triangle, uniforms, the model matrix (translate, rotate, scale, and the T * R * S order), a real camera with view and projection matrices, depth testing proved with two overlapping draws, indexed drawing with an EBO, the first cube |
-| A | 11-13 | Winding order and culling explained, wireframe key, orbit camera |
+| Done | 0-11 | Window, render loop, shader loader, test triangle, uniforms, the model matrix (translate, rotate, scale, and the T * R * S order), a real camera with view and projection matrices, depth testing proved with two overlapping draws, indexed drawing with an EBO, the first cube, winding order and culling explained with a wireframe key |
+| A | 12-13 | Orbit camera |
 | B | 14-25 | Reusable cube/quad/grid/cylinder/sphere meshes, smooth normals, runtime tessellation |
 | C | 26-33 | Ambient, diffuse, specular, materials, second light, Flat/Gouraud/Phong |
 | D | 34-37 | One static hierarchical ship and the hierarchy proof |

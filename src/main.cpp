@@ -1,4 +1,4 @@
-// Ship Battle Simulator - Phase 10: the first real 3D object - a cube.
+// Ship Battle Simulator - Phase 11: winding order and GL_CULL_FACE, on purpose.
 //
 // Every frame follows the same clear order:
 //   1. measure time;
@@ -7,14 +7,16 @@
 //   4. render the scene;
 //   5. show the frame and read window events.
 //
-// Phase 9's quad proved indexed drawing on one flat face. A cube is six of
-// those, glued into a solid box. It needs 24 vertices - 4 PER FACE, not 8
-// shared corners - so each face can carry its own flat colour without
-// blending into its neighbours at the edges, and 36 indices - 6 per face,
-// the same {corner, corner, corner, corner, corner, corner} pattern the quad
-// already used, six times over. It spins on a tilted axis so every face is
-// seen in turn, which is the real proof that this is a solid 3D object and
-// not six flat squares glued together by accident.
+// GL_CULL_FACE has been quietly switched on since Phase 1, and getting the
+// cube's winding order right in Phase 10 was really this phase's idea
+// arriving early: OpenGL decides which side of a triangle is its front from
+// the order its corners are listed in, and throws the back side away before
+// it is ever coloured in. This phase makes that explicit with a real tool: a
+// 'W' key that shows every edge as a wireframe line AND switches culling
+// off, so a face that culling would normally hide can be inspected directly.
+// Reversing one face's winding on purpose (see the viva modification in the
+// explanation document) leaves a visible hole in solid mode; the wireframe
+// view proves the face's geometry was never missing, only discarded.
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -33,7 +35,7 @@ namespace AppConfig {
 // These values are grouped here so they are easy to find and change during a viva.
 constexpr int WINDOW_WIDTH = 1280;
 constexpr int WINDOW_HEIGHT = 720;
-constexpr const char* WINDOW_TITLE = "Ship Battle Simulator - Phase 10: The Cube";
+constexpr const char* WINDOW_TITLE = "Ship Battle Simulator - Phase 11: Winding & Wireframe";
 constexpr const char* VERTEX_SHADER_PATH = "shaders/basic.vert";
 constexpr const char* FRAGMENT_SHADER_PATH = "shaders/basic.frag";
 
@@ -394,6 +396,14 @@ struct SceneState {
     bool depthTestEnabled = true;
     bool depthKeyWasDown = false;
 
+    // Phase 11: toggled by the 'W' key. False is the normal, solid view:
+    // GL_CULL_FACE stays on, so a wrongly-wound face is silently discarded.
+    // True switches to line-only rendering AND switches culling off, so
+    // every triangle's outline is visible, including one that solid mode
+    // would have thrown away.
+    bool wireframeEnabled = false;
+    bool wireframeKeyWasDown = false;
+
     // Phase 6: toggled by the 'O' key. False builds the correct T * R * S
     // order; true builds the same three matrices back to front, on purpose,
     // so the two can be compared live.
@@ -435,6 +445,21 @@ static void processInput(GLFWwindow* window, SceneState& scene)
                 : "OFF (whichever triangle is drawn LAST wins, correct or not)");
     }
     scene.depthKeyWasDown = depthKeyIsDown;
+
+    // Phase 11: 'W' switches between solid and wireframe rendering, and
+    // between culling on and culling off. Same edge-detection reason as
+    // 'D' and 'O': without the "was it already down" check, holding the key
+    // would flip the state roughly 120 times a second.
+    const bool wireframeKeyIsDown = glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS;
+    if (wireframeKeyIsDown && !scene.wireframeKeyWasDown) {
+        scene.wireframeEnabled = !scene.wireframeEnabled;
+        std::printf(
+            "[wireframe] %s\n",
+            scene.wireframeEnabled
+                ? "ON, culling OFF (every triangle's outline is visible, front and back)"
+                : "OFF, culling ON (the normal solid view)");
+    }
+    scene.wireframeKeyWasDown = wireframeKeyIsDown;
 
     // Phase 6: 'O' compares the correct T * R * S order against the same
     // three matrices multiplied back to front. glfwGetKey reports the key as
@@ -839,6 +864,20 @@ static void renderScene(
     else
         glDisable(GL_DEPTH_TEST);
 
+    // Phase 11: 'W' controls TWO pieces of GL state together, for one reason.
+    // glPolygonMode alone would not be enough: a triangle that GL_CULL_FACE
+    // discards for facing the wrong way is thrown away BEFORE the polygon
+    // mode ever gets a chance to draw its outline. Switching culling off at
+    // the same moment as switching to line mode is what lets a culled
+    // face's edges actually appear.
+    if (scene.wireframeEnabled) {
+        glDisable(GL_CULL_FACE);
+        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    } else {
+        glEnable(GL_CULL_FACE);
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+    }
+
     glBindVertexArray(triangle.vao);
 
     // Draw 1: the near copy, drawn FIRST.
@@ -967,11 +1006,11 @@ int main()
     glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
     glViewport(0, 0, framebufferWidth, framebufferHeight);
 
-    // GL_CULL_FACE has had nothing to change since Phase 1, when both were
-    // switched on to prepare for 3D drawing. GL_DEPTH_TEST is different as of
-    // Phase 8: this is only the startup default. renderScene() now sets it
-    // fresh every frame from the 'D' key's state, so this line matters only
-    // for the very first frame, before any key has been read.
+    // Both of these are only the startup defaults now. GL_DEPTH_TEST has been
+    // dynamic since Phase 8, and GL_CULL_FACE joins it in Phase 11:
+    // renderScene() sets both fresh every frame from the 'D' and 'W' keys'
+    // state, so these two lines matter only for the very first frame, before
+    // either key has been read.
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
 
@@ -1020,7 +1059,7 @@ int main()
         return 1;
     }
 
-    std::printf("Phase 10 ready. Press D to toggle depth test, O to compare transform order. Press ESC to close.\n");
+    std::printf("Phase 11 ready. Press W for wireframe, D to toggle depth test, O to compare transform order. Press ESC to close.\n");
 
     SceneState scene;
 
