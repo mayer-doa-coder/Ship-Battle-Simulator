@@ -35,12 +35,15 @@ Phase 52 is now Phase 66.
 | 9 | A static quad with an EBO: 4 unique vertices, 6 `glDrawElements` indices, no duplicated corners | [PHASE_9_EXPLANATION.md](PHASE_9_EXPLANATION.md) |
 | 10 * | A spinning cube: 24 vertices (4 per face, so each face keeps its own flat colour), 36 indices, a tilted spin axis so every face is eventually seen | [PHASE_10_EXPLANATION.md](PHASE_10_EXPLANATION.md) |
 | 11 | Winding order and `GL_CULL_FACE` named explicitly; an edge-detected `W` key shows wireframe with culling off, so a deliberately reversed face's outline can be proven still there | [PHASE_11_EXPLANATION.md](PHASE_11_EXPLANATION.md) |
+| 12 | `src/Camera.h`: an `OrbitCamera` (radius, yaw, pitch) replacing the fixed `EYE`, driven by held (not toggled) arrow keys, dt-scaled; pitch is deliberately left unclamped so the pole-flip can be seen | [PHASE_12_EXPLANATION.md](PHASE_12_EXPLANATION.md) |
+| 13 * | The arrow-key driver replaced with two GLFW callbacks (`glfwSetCursorPosCallback`, `glfwSetScrollCallback`) reached via `glfwSetWindowUserPointer`; pitch clamped to 89 degrees, radius clamped to `[1.5, 15.0]` | [PHASE_13_EXPLANATION.md](PHASE_13_EXPLANATION.md) |
 
-Current source: `src/main.cpp`, `src/Shader.h`, `shaders/basic.vert`,
-`shaders/basic.frag`. There are no meshes, lights, ships, or gameplay yet. The
-scene draws two triangles, one indexed quad, and one indexed, spinning cube -
-the project's first solid 3D object - and both `GL_DEPTH_TEST` and
-`GL_CULL_FACE` can now be switched off live to see what each one was doing.
+Current source: `src/main.cpp`, `src/Shader.h`, `src/Camera.h`,
+`shaders/basic.vert`, `shaders/basic.frag`. There are no meshes, lights,
+ships, or gameplay yet. The scene draws two triangles, one indexed quad, and
+one indexed, spinning cube - the project's first solid 3D object - viewed
+through a mouse-driven orbit camera with real limits, with `GL_DEPTH_TEST` and
+`GL_CULL_FACE` still switchable live to see what each one was doing.
 
 ## How to read the tables
 
@@ -55,7 +58,7 @@ the project's first solid 3D object - and both `GL_DEPTH_TEST` and
 
 ## How far to work right now
 
-**Phase 12 to Phase 25** - the rest of Stage A, then all of Stage B. Phases 3 to 11 are
+**Phase 14 to Phase 25** - all of Stage B. Stage A and Phases 3 to 13 are now
 done. This range is the answer to "I want to work until I am creating 3D
 objects".
 
@@ -100,8 +103,8 @@ own and each with its own debugging method. They are now four phases.
 | 9 **done** | Indexed drawing: an EBO and `glDrawElements`, used to build a quad from 4 vertices and 6 indices | A quad made of two triangles that share an edge, with no duplicated corner data | Change one index and see the tear | B4 |
 | 10 * **done** | The cube: 24 vertices, 36 indices, one face colour each | A solid 3D cube turning in space | Change a cube dimension or a face colour | B3 |
 | 11 **done** | Winding order and `glEnable(GL_CULL_FACE)`, plus a wireframe key | Reversing one face's indices leaves a visible hole in the cube; the wireframe view proves the face is still there | Reverse one face's winding and find the hole | B4 |
-| 12 | `src/Camera.h`: `radius`, `yaw`, `pitch`, and the spherical-to-Cartesian position, driven by the arrow keys first | The cube can be inspected from any angle | Change the orbit speed | B3 |
-| 13 * | GLFW cursor and scroll callbacks: drag to orbit, wheel to zoom, pitch clamped to 89 degrees, radius clamped | Dragging orbits smoothly and the view never flips over at the poles | Change the zoom limits | B3 |
+| 12 **done** | `src/Camera.h`: `radius`, `yaw`, `pitch`, and the spherical-to-Cartesian position, driven by the arrow keys first | The cube can be inspected from any angle | Change the orbit speed | B3 |
+| 13 * **done** | GLFW cursor and scroll callbacks: drag to orbit, wheel to zoom, pitch clamped to 89 degrees, radius clamped | Dragging orbits smoothly and the view never flips over at the poles | Change the zoom limits | B3 |
 
 **Why Phase 7 is one phase and not two.** The view and projection matrices
 cannot be introduced separately and still leave something on screen. A view

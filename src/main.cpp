@@ -1,4 +1,4 @@
-// Ship Battle Simulator - Phase 11: winding order and GL_CULL_FACE, on purpose.
+// Ship Battle Simulator - Phase 13: mouse-driven orbit, and real limits.
 //
 // Every frame follows the same clear order:
 //   1. measure time;
@@ -7,16 +7,11 @@
 //   4. render the scene;
 //   5. show the frame and read window events.
 //
-// GL_CULL_FACE has been quietly switched on since Phase 1, and getting the
-// cube's winding order right in Phase 10 was really this phase's idea
-// arriving early: OpenGL decides which side of a triangle is its front from
-// the order its corners are listed in, and throws the back side away before
-// it is ever coloured in. This phase makes that explicit with a real tool: a
-// 'W' key that shows every edge as a wireframe line AND switches culling
-// off, so a face that culling would normally hide can be inspected directly.
-// Reversing one face's winding on purpose (see the viva modification in the
-// explanation document) leaves a visible hole in solid mode; the wireframe
-// view proves the face's geometry was never missing, only discarded.
+// Phase 12's arrow keys are gone. In their place: click and drag to orbit,
+// scroll to zoom, both handled by two GLFW callbacks living in src/Camera.h.
+// Pitch is now clamped to 89 degrees each way, so the flip Phase 12
+// deliberately left in can never happen again, and radius is clamped too, so
+// scrolling cannot zoom through the target or vanish into the distance.
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -24,6 +19,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include "Camera.h"
 #include "Shader.h"
 
 #include <algorithm>
@@ -35,7 +31,7 @@ namespace AppConfig {
 // These values are grouped here so they are easy to find and change during a viva.
 constexpr int WINDOW_WIDTH = 1280;
 constexpr int WINDOW_HEIGHT = 720;
-constexpr const char* WINDOW_TITLE = "Ship Battle Simulator - Phase 11: Winding & Wireframe";
+constexpr const char* WINDOW_TITLE = "Ship Battle Simulator - Phase 13: Mouse Orbit";
 constexpr const char* VERTEX_SHADER_PATH = "shaders/basic.vert";
 constexpr const char* FRAGMENT_SHADER_PATH = "shaders/basic.frag";
 
@@ -64,10 +60,9 @@ const glm::vec3 TINT(0.6f, 2.4f, 3.0f);
 
 namespace CameraConfig {
 
-// Phase 7: a fixed camera. It does not move or look around yet - that is
-// Phase 12's orbit camera. For now it only needs a position, a point to look
-// at, and which way is "up" from its own point of view.
-const glm::vec3 EYE(0.0f, 0.0f, 4.0f);       // the camera's position in the world
+// Phase 7 gave the camera a fixed position, EYE. Phase 12 replaced that with
+// a real OrbitCamera (src/Camera.h), driven by the mouse since Phase 13, so
+// only the point it looks at and which way is "up" stay as constants here.
 const glm::vec3 TARGET(0.0f, 0.0f, 0.0f);    // the point it looks at
 const glm::vec3 UP(0.0f, 1.0f, 0.0f);        // which way is "up" for this camera
 
@@ -149,10 +144,13 @@ namespace TriangleDepth {
 // Phase 7: how the triangle drifts toward and away from the camera. The world
 // z position at any moment is
 //     z = DEPTH_AMPLITUDE * sin(DEPTH_SPEED * now)
-// which swings between -DEPTH_AMPLITUDE and +DEPTH_AMPLITUDE. The camera sits
-// at CameraConfig::EYE.z = 4.0, so the triangle's actual distance from the
-// camera swings between (4 - DEPTH_AMPLITUDE) when it is nearest and
-// (4 + DEPTH_AMPLITUDE) when it is farthest.
+// which swings between -DEPTH_AMPLITUDE and +DEPTH_AMPLITUDE. The camera
+// starts at a distance of 4.0 (OrbitCamera's default radius, Phase 12), so at
+// that starting view the triangle's actual distance from the camera swings
+// between (4 - DEPTH_AMPLITUDE) when it is nearest and (4 + DEPTH_AMPLITUDE)
+// when it is farthest. Orbiting the camera changes the real distance, since
+// the camera itself can move now - these two numbers describe the ORIGINAL
+// fixed view, not a promise that holds from every angle.
 //
 // This is the phase's real demonstration. Before Phase 7, changing an
 // object's z did nothing useful: with no view or projection matrix, z never
@@ -361,6 +359,12 @@ struct CubeGpu {
 // Data that changes as the scene changes. updateScene() writes it and
 // renderScene() reads it, so neither function needs to know about the other.
 struct SceneState {
+    // Phase 12: the camera's own state - a distance and two angles, turned
+    // by mouse drag and scroll since Phase 13. Its default values give the
+    // exact same starting view Phases 7-11 used, so nothing changes on
+    // screen until the mouse is actually used.
+    OrbitCamera camera;
+
     // glm::mat4(1.0f) is the identity matrix: it moves nothing. Writing the 1.0f
     // explicitly keeps this correct in every glm version.
     glm::mat4 triangleModel = glm::mat4(1.0f);
@@ -431,6 +435,11 @@ static void processInput(GLFWwindow* window, SceneState& scene)
 {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, GLFW_TRUE);
+
+    // Phase 13: the camera is no longer read here at all. It is driven by
+    // two GLFW callbacks in src/Camera.h instead, which GLFW calls directly
+    // from glfwPollEvents() whenever the mouse actually moves or scrolls -
+    // there is nothing for processInput() to poll every frame any more.
 
     // Phase 8: 'D' switches GL_DEPTH_TEST off and on. Same edge-detection
     // reason as 'O' below: without the "was it already down" check, holding
@@ -507,8 +516,9 @@ static void updateScene(
     const float offsetX =
         TriangleMotion::SLIDE_DISTANCE * std::sin(TriangleMotion::SLIDE_SPEED * now);
 
-    // Phase 7: the triangle's world-space depth. Positive moves it toward
-    // CameraConfig::EYE (nearer, so it looks bigger); negative moves it away.
+    // Phase 7: the triangle's world-space depth. Positive moves it toward the
+    // camera's starting position (nearer, so it looks bigger); negative moves
+    // it away.
     const float offsetZ =
         TriangleDepth::DEPTH_AMPLITUDE * std::sin(TriangleDepth::DEPTH_SPEED * now);
 
@@ -528,7 +538,7 @@ static void updateScene(
     // PULSE_MIN and PULSE_MAX, applied equally on x and y, keeps the
     // triangle's proportions correct while it grows and shrinks.
     const float scalePulseMid =
-        (TriangleScale::PULSE_MIN + TriangleScale::PULSE_MAX) * 0.5f;
+        (TriangleScale::PULSE_MIN + TriangleScale::PULSE_MAX) * 0.1f;
     const float scalePulseAmp =
         (TriangleScale::PULSE_MAX - TriangleScale::PULSE_MIN) * 0.5f;
     const float scaleFactor =
@@ -588,7 +598,8 @@ static void updateScene(
     // vectors instead of a translate/rotate/scale recipe. It re-measures every
     // WORLD position as seen from the camera, so the camera can stay at the
     // origin of its own space while everything else moves around it.
-    scene.view = glm::lookAt(CameraConfig::EYE, CameraConfig::TARGET, CameraConfig::UP);
+    const glm::vec3 eye = orbitCameraPosition(scene.camera);
+    scene.view = glm::lookAt(eye, CameraConfig::TARGET, CameraConfig::UP);
 
     // The projection depends on the window's shape, not the clock, so it is
     // rebuilt from the CURRENT framebuffer size every frame. A minimised
@@ -1059,9 +1070,24 @@ int main()
         return 1;
     }
 
-    std::printf("Phase 11 ready. Press W for wireframe, D to toggle depth test, O to compare transform order. Press ESC to close.\n");
+    std::printf("Phase 13 ready. Drag with the left mouse button to orbit, scroll to zoom. Press W for wireframe, D to toggle depth test, O to compare transform order. Press ESC to close.\n");
 
     SceneState scene;
+
+    // Phase 13: give the two mouse callbacks in src/Camera.h a way to reach
+    // this camera. GLFW's callbacks are plain C function pointers - they
+    // cannot capture 'scene' the way a lambda could - so a pointer to the
+    // one camera they need is attached to the window itself, and each
+    // callback reads it back out with glfwGetWindowUserPointer.
+    //
+    // Seeding lastCursorX/Y from the REAL current cursor position, rather
+    // than leaving them at their 0.0 default, stops the very first drag from
+    // jumping by however far the cursor's true starting position happens to
+    // be from the corner of the screen.
+    glfwSetWindowUserPointer(window, &scene.camera);
+    glfwGetCursorPos(window, &scene.camera.lastCursorX, &scene.camera.lastCursorY);
+    glfwSetCursorPosCallback(window, handleOrbitCameraCursorMove);
+    glfwSetScrollCallback(window, handleOrbitCameraScroll);
 
     FrameClock clock;
     startClock(clock);
