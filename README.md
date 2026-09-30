@@ -2,7 +2,7 @@
 
 This is the step-by-step teaching version of `Broadside`. It will eventually demonstrate the same naval battle, but every phase must stay small enough to explain, modify, and demonstrate independently.
 
-## Current progress: Phase 13
+## Current progress: Phase 14
 
 The repository currently contains only the OpenGL foundation:
 
@@ -25,8 +25,9 @@ The repository currently contains only the OpenGL foundation:
 - the project's first real 3D object: a solid, spinning cube built from 24 vertices and 36 indices, one flat colour per face, correctly wound on all six sides;
 - a `W` key that shows every triangle's edges and switches face culling off, so a face a winding mistake would normally hide silently can be proven to still exist;
 - `src/Camera.h`: an orbit camera holding a distance and two angles instead of a fixed position, now driven by left-drag to orbit and the scroll wheel to zoom, with pitch clamped to 89 degrees and radius clamped to a sensible range.
+- `src/Mesh.h`: a single reusable `Mesh` class (owning a VAO/VBO/EBO, move-only, RAII) replacing the separate `QuadGpu`/`CubeGpu` structs and their four hand-written create/destroy functions; the cube's geometry now comes from `makeCube()`.
 
-There are deliberately no reusable mesh generators, lighting, ships, cannons, people, or environment modes yet. The transformations are a translation, a rotation, a scale, and a camera the mouse can actually move. This is the first phase to draw more than one object, the first to use indexed drawing, the first genuinely 3D solid, the first to explain winding order and face culling directly, and the first to use real GLFW input callbacks instead of polling.
+There are deliberately no lighting, ships, cannons, people, or environment modes yet, and no mesh shapes beyond the quad and cube. The transformations are a translation, a rotation, a scale, and a camera the mouse can actually move. This is the first phase to draw more than one object, the first to use indexed drawing, the first genuinely 3D solid, the first to explain winding order and face culling directly, the first to use real GLFW input callbacks instead of polling, and the first to draw two different shapes through one shared, reusable mesh type.
 
 ## Build on Windows
 
@@ -70,20 +71,22 @@ is a single concept with a single visual checkpoint.
 
 | Stage | Phases | Outcome |
 |---|---|---|
-| Done | 0-13 | Window, render loop, shader loader, test triangle, uniforms, the model matrix (translate, rotate, scale, and the T * R * S order), a real camera with view and projection matrices, depth testing proved with two overlapping draws, indexed drawing with an EBO, the first cube, winding order and culling explained with a wireframe key, a mouse-driven orbit camera with real limits |
-| B | 14-25 | Reusable cube/quad/grid/cylinder/sphere meshes, smooth normals, runtime tessellation |
-| B | 14-25 | Reusable cube/quad/grid/cylinder/sphere meshes, smooth normals, runtime tessellation |
-| C | 26-33 | Ambient, diffuse, specular, materials, second light, Flat/Gouraud/Phong |
-| D | 34-37 | One static hierarchical ship and the hierarchy proof |
-| E | 38-39 | Keyboard-controlled player ship |
-| F | 40-43 | Animated sea, ship rocking, idle rigging motion |
-| G | 44-46 | Cannon aiming and the muzzle transform |
-| H | 47-49 | Ballistic firing, trajectory control, reload |
-| I | 50-52 | A second ship, then a reusable fleet and target selection |
-| J | 53-55 | Hit and splash resolution, pooled particles |
-| K | 56-60 | Crew roles: lookout, helmsman, cannon crew, helpers |
+| Done | 0-14 | Window, render loop, shader loader, test triangle, uniforms, the model matrix (translate, rotate, scale, and the T * R * S order), a real camera with view and projection matrices, depth testing proved with two overlapping draws, indexed drawing with an EBO, the first cube, winding order and culling explained with a wireframe key, a mouse-driven orbit camera with real limits, and a reusable `Mesh` class replacing the hand-written quad/cube structs |
+| B | 15-25 | Normals-as-colour debug view, reusable quad/grid/cylinder/sphere meshes, smooth normals, runtime tessellation |
+| D | 26-30 | The ship, its rigging, its cannon, and a crew member - all built and standing still, in flat colour, before any lighting or motion exists |
+| C | 31-38 | Ambient, diffuse, specular, materials, second light, Flat/Gouraud/Phong |
+| E | 39-40 | Keyboard-controlled player ship |
+| F | 41-44 | Animated sea, ship rocking, idle rigging motion |
+| G | 45-47 | Cannon aiming and the muzzle transform |
+| H | 48-50 | Ballistic firing, trajectory control, reload |
+| I | 51-53 | A second ship, then a reusable fleet and target selection |
+| J | 54-56 | Hit and splash resolution, pooled particles |
+| K | 57-60 | Crew roles: lookout, helmsman, cannon crew, helpers |
 | L | 61-62 | Teaching HUD and the optimization measurement pass |
 | M | 63-65 | Sun, moonlight, rain, and winter modes |
 | N | 66 | Report and viva rehearsal |
 
-This order may be refined in documentation, but environment modes remain the last functional feature as requested.
+Stage D was moved to follow Stage B on 22 September 2026, so every core object
+(ship, cannon, crew) is built before any lighting or motion stage begins - see
+`docs/PHASE_PLAN.md`'s numbering note for the full reasoning. Environment
+modes remain the last functional feature as requested.

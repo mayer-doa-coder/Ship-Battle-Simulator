@@ -18,7 +18,10 @@
 // PITCH. This is the same idea as a satellite circling a planet: one
 // distance and two angles describe every possible position around it.
 struct OrbitCamera {
-    float radius = 4.0f;   // distance from the target, in world units
+    // Raised from the phase-demo default of 4.0 so the ship, cannon, and
+    // crew - much bigger than a single unit cube - are all in view as soon
+    // as the program starts.
+    float radius = 7.0f;   // distance from the target, in world units
     float yaw = 0.0f;      // radians, turning left/right around the target
     float pitch = 0.0f;    // radians, tilting up/down toward the target
 
@@ -40,8 +43,12 @@ namespace OrbitCameraConfig {
 constexpr float MOUSE_SENSITIVITY = 0.005f;   // radians turned per pixel dragged
 
 constexpr float ZOOM_SPEED = 0.5f;    // world units per scroll step
-constexpr float MIN_RADIUS = 1.5f;    // closest the camera may zoom in
-constexpr float MAX_RADIUS = 15.0f;   // farthest the camera may zoom out
+// Lowered from 1.5 so small standalone objects (a cannonball, a crate) can
+// still be inspected up close when viewed on their own.
+constexpr float MIN_RADIUS = 0.4f;    // closest the camera may zoom in
+// Raised from 15.0 so the whole water plane fits in view when zoomed out,
+// not just the ship sitting on it.
+constexpr float MAX_RADIUS = 25.0f;   // farthest the camera may zoom out
 
 // Beyond this many degrees up or down, the camera would pass directly over
 // the target and start descending the far side - the flip Phase 12

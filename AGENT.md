@@ -1,10 +1,12 @@
 # AGENT.md - Ship Battle Simulator
 
-This repository is the incremental teaching build. The current source of truth is [README.md](README.md), the phase plan is [docs/PHASE_PLAN.md](docs/PHASE_PLAN.md), and the current completed checkpoint is documented in [docs/PHASE_13_EXPLANATION.md](docs/PHASE_13_EXPLANATION.md).
+This repository is the incremental teaching build. The current source of truth is [README.md](README.md), the phase plan is [docs/PHASE_PLAN.md](docs/PHASE_PLAN.md), and the current completed checkpoint is documented in [docs/PHASE_14_EXPLANATION.md](docs/PHASE_14_EXPLANATION.md).
 
 ## Current phase boundary
 
-Phase 13 is the latest implemented phase. The next phase is Phase 14 in [docs/PHASE_PLAN.md](docs/PHASE_PLAN.md): `src/Mesh.h`, a `Vertex` struct and a `Mesh` type that owns its own VAO/VBO/EBO and draws itself, and nothing else. This is a milestone phase (marked `*` in the plan). Do not add lighting, ships, or anything past reusable meshes unless the student explicitly asks to begin the phase that owns it.
+Phase 14 is the latest implemented phase: `src/Mesh.h` now holds a `Vertex{position, color}` struct and a move-only `Mesh` class owning its own VAO/VBO/EBO, replacing the old `QuadGpu`/`CubeGpu` structs and their four create/destroy functions; the cube's geometry moved into `makeCube()`. The next phase is Phase 15 in [docs/PHASE_PLAN.md](docs/PHASE_PLAN.md): add a `normal` field to `Vertex`, give `makeCube()` real per-face normals, and add a normals-as-colour debug view (`N * 0.5 + 0.5`) toggled by a key. Do not add lighting, ships, or anything past reusable meshes unless the student explicitly asks to begin the phase that owns it.
+
+**Stage order changed on 22 September 2026.** After Phase 25 finishes Stage B, the next stage is the new Stage D (Phases 26-30: ship, cannon, crew - object construction only, no lighting or motion), not the old Stage C. Lighting now starts at Phase 31. See [docs/PHASE_PLAN.md](docs/PHASE_PLAN.md)'s numbering note for why. Do not jump to old phase numbers from memory - re-read the plan when Phase 25 is reached.
 
 ## Permanent project requirements
 
@@ -31,6 +33,6 @@ The finished project will contain:
 
 These requirements are future phases, not permission to implement them all at once.
 
-## Phase 13 checkpoint
+## Phase 14 checkpoint
 
-Phase 13 is complete only when the project builds in Debug and Release with no compiler warnings, all shaders link with no missing-uniform warning, the default view with no mouse input looks identical to Phase 12's, left-drag visibly and smoothly orbits the camera, scrolling visibly zooms in and out and holds at fixed limits at each extreme, dragging far enough in pitch never flips the view, the earlier triangles, quad, cube, and the `D`, `W`, and `O` keys still behave exactly as before from any camera position, and the window still reports frame timing and closes normally. `src/Camera.h` holds the camera; nothing in it is a reusable project mesh.
+Phase 14 is complete only when the project builds in Debug and Release with no compiler warnings, the default view with no input looks identical to Phase 13's, `W`/`D`/`O`/left-drag orbit/scroll-wheel zoom all still behave exactly as before now that the quad and cube are `Mesh` objects, shutdown frees every GPU object while the context still exists with no leaks, and `main.cpp` no longer contains `QuadGpu`, `CubeGpu`, or their four create/destroy functions. `src/Mesh.h`'s `Vertex` intentionally has no `normal` field yet - it stores `position` and `color`, the same pair every object has used since Phase 2, because nothing reads a normal until Phase 15's debug view. Do not add `normal` early just because the reference guide's wording for this phase mentions it.

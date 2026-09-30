@@ -1,17 +1,29 @@
-// Ship Battle Simulator - Phase 13: mouse-driven orbit, and real limits.
+// Ship Battle Simulator - Object Scene (outside the phase plan).
 //
-// Every frame follows the same clear order:
+// The step-by-step phase plan (docs/PHASE_PLAN.md) stopped after Phase 14.
+// This file is a separate, requested piece of work: build the project's
+// actual objects - a ship (with a cannon, a flag, and a wheel), an enemy
+// ship, a five-person crew, the sun, the sea, and a few deck props - so they
+// exist and can be shown to a teacher now, using only what the phases
+// already built (a camera, a shader, and the Mesh class).
+//
+// Every object can also be shown ALONE: number keys 0-9 (and 'E' for the
+// enemy ship) switch which single object is on screen, so each one can be
+// inspected and demonstrated on its own instead of only as part of the full
+// scene. See docs/OBJECTS_BUILD.md for the full explanation.
+//
+// Nothing here is lit and nothing here moves on its own. Both of those are
+// real, separate ideas (lighting, then motion) that the phase plan still
+// covers in order; this file only answers "what does each object look like
+// and where does it sit," using flat colours exactly like every phase so
+// far.
+//
+// Every frame still follows the same order the phase plan established:
 //   1. measure time;
 //   2. read input;
 //   3. update scene data;
 //   4. render the scene;
 //   5. show the frame and read window events.
-//
-// Phase 12's arrow keys are gone. In their place: click and drag to orbit,
-// scroll to zoom, both handled by two GLFW callbacks living in src/Camera.h.
-// Pitch is now clamped to 89 degrees each way, so the flip Phase 12
-// deliberately left in can never happen again, and radius is clamped too, so
-// scrolling cannot zoom through the target or vanish into the distance.
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -20,7 +32,12 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "Camera.h"
+#include "Crew.h"
+#include "Mesh.h"
+#include "Props.h"
+#include "Scenery.h"
 #include "Shader.h"
+#include "Ship.h"
 
 #include <algorithm>
 #include <cmath>
@@ -31,7 +48,7 @@ namespace AppConfig {
 // These values are grouped here so they are easy to find and change during a viva.
 constexpr int WINDOW_WIDTH = 1280;
 constexpr int WINDOW_HEIGHT = 720;
-constexpr const char* WINDOW_TITLE = "Ship Battle Simulator - Phase 13: Mouse Orbit";
+constexpr const char* WINDOW_TITLE = "Ship Battle Simulator - Ship, Cannon, Crew, Sun, and Sea";
 constexpr const char* VERTEX_SHADER_PATH = "shaders/basic.vert";
 constexpr const char* FRAGMENT_SHADER_PATH = "shaders/basic.frag";
 
@@ -45,274 +62,225 @@ constexpr float REPORT_INTERVAL = 1.0f;
 // 1 enables V-sync. Change this to 0 only when measuring uncapped performance.
 constexpr int VSYNC_INTERVAL = 1;
 
-// GLM is used here so Phase 0 verifies that the math library is configured too.
-const glm::vec3 CLEAR_COLOR(0.82f, 0.66f, 0.04f);
+// How many samples each pixel is averaged from (MSAA - multisample
+// anti-aliasing). This is what actually smooths every edge in the scene:
+// without it, a diagonal or curved edge is made of hard, square pixel
+// steps ("jaggies"); with it, the GPU blends a few samples per pixel along
+// every edge so it looks smooth instead. 4 is a common, inexpensive choice.
+constexpr int MSAA_SAMPLES = 4;
 
-// Phase 3: a colour filter sent to the fragment shader every frame as the
-// uniform 'uTint'. Each vertex colour is multiplied by it.
-//   (1, 1, 1)    leaves the triangle exactly as its vertex colours describe;
-//   below 1      dims that channel;
-//   above 1      brightens it, up to the display limit of 1.
-// This is the easiest viva value in the phase: change it, rebuild, and the
-// triangle changes colour without any edit to shaders/basic.frag.
-const glm::vec3 TINT(0.6f, 2.4f, 3.0f);
+// A plain sky colour behind the objects, now that the scene is meant to look
+// like a real place rather than a shader test pattern.
+const glm::vec3 CLEAR_COLOR(0.53f, 0.75f, 0.90f);
+
 } // namespace AppConfig
 
 namespace CameraConfig {
 
-// Phase 7 gave the camera a fixed position, EYE. Phase 12 replaced that with
-// a real OrbitCamera (src/Camera.h), driven by the mouse since Phase 13, so
-// only the point it looks at and which way is "up" stay as constants here.
-const glm::vec3 TARGET(0.0f, 0.0f, 0.0f);    // the point it looks at
-const glm::vec3 UP(0.0f, 1.0f, 0.0f);        // which way is "up" for this camera
+const glm::vec3 UP(0.0f, 1.0f, 0.0f);
 
 // The viewing frustum: a narrow pyramid of visible space with its point at
 // the camera. FIELD_OF_VIEW_DEGREES sets how wide that pyramid opens.
 // NEAR_PLANE and FAR_PLANE cut off anything closer or farther than that -
-// nothing outside this range is ever drawn, which is why both must comfortably
-// contain the triangle's whole depth range (Phase 7 moves it between 2.5 and
-// 5.5 units from EYE).
+// the sun sits about 12 units away, so FAR_PLANE must comfortably clear that.
 constexpr float FIELD_OF_VIEW_DEGREES = 45.0f;
 constexpr float NEAR_PLANE = 0.1f;
 constexpr float FAR_PLANE = 100.0f;
 
 } // namespace CameraConfig
 
-namespace TriangleConfig {
+// Everything about the objects that are NOT the ship or the crew member -
+// those two have their own files, Ship.h and Crew.h, because each is built
+// from several named parts. The sea and the sun are each just one shape, so
+// they stay here. src/Props.h holds the smaller, standalone deck props.
+namespace SceneConfig {
 
-// Each row is: position x/y/z, then colour red/green/blue.
-// These are easy viva values: edit positions to reshape/move the triangle and
-// edit colours to change its three corners.
-constexpr float VERTICES[] = {
-     0.40f,  0.37f, 0.0f,   0.1f, 0.1f, 0.1f,
-    -0.40f,  0.37f, 0.0f,   0.1f, 0.1f, 0.1f,
-     0.00f, -0.73f, 0.0f,   0.1f, 0.1f, 1.0f
-};
+// How detailed the round shapes are. Raised well above Mesh.h's own
+// defaults (16 segments, 12x16 stacks/slices) for a visibly smoother,
+// rounder mast, barrel, cannonball, head, and sun - the "make it look like
+// HD" request. More segments means more triangles for the same shape; at
+// this project's scene size (a handful of objects) the cost is negligible.
+constexpr int CYLINDER_SEGMENTS = 32;
+constexpr int SPHERE_STACKS = 24;
+constexpr int SPHERE_SLICES = 32;
 
-constexpr int VERTEX_COUNT = 3;
-constexpr int FLOATS_PER_VERTEX = 6;
-constexpr int POSITION_COMPONENTS = 3;
-constexpr int COLOR_COMPONENTS = 3;
+// The sea: a very flat, wide box. Its top face sits exactly at y = 0, which
+// is also where the ship's hull rests (see ShipShape::HULL_HEIGHT in Ship.h)
+// AND where every mountain's base sits (drawMountain(), src/Scenery.h) - the
+// water has to reach at least as far out as the mountain ring's own outer
+// edge (MOUNTAIN_RING_RADIUS + half a mountain's width, below), or there is
+// a ring of bare nothing between the shoreline and the mountains instead of
+// the mountains appearing to rise out of the sea.
+constexpr float WATER_WIDTH = 130.0f;
+constexpr float WATER_LENGTH = 130.0f;
+constexpr float WATER_THICKNESS = 0.06f;
+const glm::vec3 WATER_COLOR(0.10f, 0.35f, 0.55f);
 
-} // namespace TriangleConfig
-
-namespace TriangleMotion {
-
-// Phase 4: how the triangle slides. The x offset at any moment is
-//     offset = SLIDE_DISTANCE * sin(SLIDE_SPEED * now)
-// so it swings between -SLIDE_DISTANCE and +SLIDE_DISTANCE.
-// The visible x range is -1 to +1 and the triangle is 0.4 wide on each side of
-// its centre, so a distance above 0.6 pushes part of it off the screen.
-constexpr float SLIDE_DISTANCE = 0.5f;   // how far each way, in clip-space units
-constexpr float SLIDE_SPEED = 1.0f;      // radians per second; one full swing is 2*pi / this
-
-} // namespace TriangleMotion
-
-namespace TriangleSpin {
-
-// Phase 5: how the triangle turns. The angle at any moment is
-//     angle = SPIN_SPEED * now
-// measured in RADIANS. A full turn is 2*pi = 6.28 radians, so a speed of 2.0
-// completes one turn in about 3.14 seconds. A positive angle turns
-// counter-clockwise when the axis points toward the viewer.
+// The sun: a bright sphere, fixed high in the sky, built from TWO
+// concentric spheres (a duller outer body and a brighter inner core) rather
+// than one flat colour - a cheap way to make it read as glowing rather than
+// as a plain painted ball, with no lighting involved.
 //
-// The turn happens around the model-space ORIGIN (0, 0), which is not exactly
-// the visual middle of this triangle (its corners average to y = +0.13), so the
-// triangle wobbles a little as it turns. To spin exactly on its middle, edit
-// TriangleConfig::VERTICES so the three y values add up to zero.
-constexpr float SPIN_SPEED = 0.5f;                        // radians per second
-const glm::vec3 SPIN_AXIS(0.0f, 0.0f, 1.0f);              // Z: straight out of the screen
+// Its X position is deliberately modest (5, not far out toward a screen
+// edge): a sphere viewed from near the edge of a wide perspective view is
+// stretched into an oval by the projection itself - a real property of
+// perspective projection, not a rendering mistake - so keeping the sun
+// closer to the middle of the default view keeps it reading as a circle.
+const glm::vec3 SUN_POSITION(5.0f, 6.0f, -8.0f);
+constexpr float SUN_RADIUS = 1.2f;
+constexpr float SUN_CORE_RADIUS = SUN_RADIUS * 0.65f;
+const glm::vec3 SUN_COLOR(1.0f, 0.80f, 0.20f);
+const glm::vec3 SUN_CORE_COLOR(1.0f, 0.96f, 0.75f);
 
-} // namespace TriangleSpin
+// Where the player's ship sits, and where the enemy ship sits. The enemy
+// ship is turned 180 degrees so its bow faces the player's, instead of both
+// ships pointing the same way.
+const glm::vec3 SHIP_POSITION(0.0f, 0.0f, 0.0f);
+const glm::vec3 ENEMY_SHIP_POSITION(6.5f, 0.0f, -3.5f);
 
-namespace TriangleScale {
-
-// Phase 6: how the triangle's size pulses. The scale factor at any moment is
-//     factor = mid + amp * sin(PULSE_SPEED * now)
-// where mid is halfway between PULSE_MIN and PULSE_MAX, and amp is half their
-// difference. This keeps the factor inside [PULSE_MIN, PULSE_MAX] without a
-// clamp. A factor of 1.0 is the triangle's original size; below 1.0 shrinks
-// it, above 1.0 enlarges it.
-constexpr float PULSE_MIN = 0.5f;     // smallest size, as a fraction of the original
-constexpr float PULSE_MAX = 1.3f;     // largest size, as a fraction of the original
-constexpr float PULSE_SPEED = 1.2f;   // radians per second
-
-} // namespace TriangleScale
-
-namespace TriangleDepth {
-
-// Phase 7: how the triangle drifts toward and away from the camera. The world
-// z position at any moment is
-//     z = DEPTH_AMPLITUDE * sin(DEPTH_SPEED * now)
-// which swings between -DEPTH_AMPLITUDE and +DEPTH_AMPLITUDE. The camera
-// starts at a distance of 4.0 (OrbitCamera's default radius, Phase 12), so at
-// that starting view the triangle's actual distance from the camera swings
-// between (4 - DEPTH_AMPLITUDE) when it is nearest and (4 + DEPTH_AMPLITUDE)
-// when it is farthest. Orbiting the camera changes the real distance, since
-// the camera itself can move now - these two numbers describe the ORIGINAL
-// fixed view, not a promise that holds from every angle.
-//
-// This is the phase's real demonstration. Before Phase 7, changing an
-// object's z did nothing useful: with no view or projection matrix, z never
-// affected how big anything looked, only whether it was clipped away. Now the
-// SAME triangle visibly grows as it nears the camera and shrinks as it
-// recedes, because uProjection performs a genuine perspective divide.
-constexpr float DEPTH_AMPLITUDE = 1.5f;   // world units nearer/farther than TARGET
-constexpr float DEPTH_SPEED = 0.8f;       // radians per second
-
-} // namespace TriangleDepth
-
-namespace DepthTestConfig {
-
-// Phase 8: a second draw of the SAME triangle mesh, shifted this much
-// FARTHER from the camera than the first. The camera sits at positive z
-// looking toward the origin (CameraConfig), so a NEGATIVE z shift moves an
-// object farther away.
-//
-// This value is fixed, not animated, on purpose: the demonstration only
-// works if one copy is reliably nearer than the other at every instant,
-// regardless of where TriangleDepth's oscillation happens to be right now.
-constexpr float FAR_COPY_Z_OFFSET = -1.2f;   // world units farther than the near copy
-
-// A strong, easily distinguished colour for the far copy, sent as 'uTint'
-// just like the near copy's AppConfig::TINT. No second mesh or second vertex
-// buffer is needed - the same VAO is bound and drawn twice with a different
-// uModel and a different uTint.
-const glm::vec3 FAR_COPY_TINT(3.0f, 0.5f, 0.4f);
-
-} // namespace DepthTestConfig
-
-namespace QuadConfig {
-
-// Phase 9: 4 UNIQUE corners, one row each: position x/y/z, then colour r/g/b.
-// A different colour on each corner makes the shared diagonal easy to see,
-// and makes a wrong index (see INDICES below) obvious: the colours would no
-// longer blend the way they are supposed to.
-//   0: top-left (red)  1: top-right (green)
-//   3: bottom-left (yellow)  2: bottom-right (blue)
-constexpr float VERTICES[] = {
-    -0.4f,  0.4f, 0.0f,   1.0f, 0.0f, 0.0f,   // 0: top-left,     red
-     0.4f,  0.4f, 0.0f,   0.5f, 1.0f, 0.0f,   // 1: top-right,    green
-     0.4f, -0.4f, 0.0f,   0.1f, 0.7f, 1.0f,   // 2: bottom-right, blue
-    -0.4f, -0.4f, 0.0f,   1.0f, 1.0f, 0.9f,   // 3: bottom-left,  yellow
+// Five crew members, each at their own deck post, each in their own colour
+// so a teacher can tell them apart at a glance even with no roles or
+// animation yet (Stage K gives them both, later).
+constexpr int CREW_COUNT = 5;
+// Every position below is chosen so no crew member's X falls within a
+// sail's own width (+-SAIL_WIDTH / 2 either side of X = 0) unless their Z
+// is also comfortably clear of that sail's mast - the two ways a head can
+// end up visually fused with a sail, both fixed here by keeping well away
+// from at least one of them.
+const glm::vec3 CREW_LOCAL_POSITIONS[CREW_COUNT] = {
+    glm::vec3(-0.75f, ShipShape::DECK_TOP_Y, 2.50f),    // on the quarterdeck, near the wheel
+    glm::vec3(0.75f, ShipShape::DECK_TOP_Y, 2.45f),     // also near the wheel
+    glm::vec3(0.35f, ShipShape::DECK_TOP_Y, -0.55f),    // at the cannon
+    glm::vec3(0.35f, ShipShape::DECK_TOP_Y, -1.35f),    // near the foremast
+    glm::vec3(-0.35f, ShipShape::DECK_TOP_Y, 0.75f),    // midship
+};
+const glm::vec3 CREW_SHIRT_COLORS[CREW_COUNT] = {
+    glm::vec3(0.25f, 0.35f, 0.65f),   // blue
+    glm::vec3(0.55f, 0.18f, 0.18f),   // red
+    glm::vec3(0.20f, 0.45f, 0.25f),   // green
+    glm::vec3(0.35f, 0.35f, 0.40f),   // grey
+    glm::vec3(0.55f, 0.42f, 0.25f),   // tan
 };
 
-// Two triangles, sharing the diagonal that runs from corner 2 to corner 0.
-// Corners 0 and 2 are each named ONCE in VERTICES above but used TWICE here -
-// that reuse is the entire point of indexed drawing. Listed the old way,
-// without indices, this quad would need 6 rows of vertex data (36 floats)
-// with corners 0 and 2 typed out twice each. This way it needs 4 rows
-// (24 floats) plus these 6 small integers.
-constexpr unsigned int INDICES[] = {
-    0, 3, 2,   // top-left, bottom-left, bottom-right
-    2, 1, 0,   // bottom-right, top-right, top-left
+// The three deck props, on the opposite side of the deck from the cannon.
+const glm::vec3 BARREL_LOCAL_POSITION(-0.75f, ShipShape::DECK_TOP_Y, -0.50f);
+const glm::vec3 CRATE_LOCAL_POSITION(-0.75f, ShipShape::DECK_TOP_Y, -0.95f);
+const glm::vec3 CANNONBALL_LOCAL_POSITION(0.90f, ShipShape::DECK_TOP_Y, -0.55f);
+
+// Background scenery: a ring of mountains running all the way around the
+// scene (not just behind the ships, so there is a horizon whichever way the
+// camera ends up facing after an orbit), a few drifting clouds, and rocks
+// breaking the water's surface. None of these are individually selectable
+// with a view key (see ViewMode below) - they are backdrop, not objects a
+// teacher would ask to inspect up close - but they are real, positioned,
+// reusable-mesh objects like everything else here.
+// The ring's radius has to clear the FARTHEST the camera can ever get from
+// the world origin, or an orbit and a zoom-out can fly the camera straight
+// into a mountain, filling the whole screen with one flat colour - exactly
+// what happened during testing before this comment was written. The
+// worst case is the "All" view's own look-at point (a few units from the
+// origin) plus the camera's own MAX_RADIUS (Camera.h, 25) - roughly 29 - so
+// the ring sits well beyond that, with room to spare.
+constexpr int MOUNTAIN_RING_COUNT = 12;
+constexpr float MOUNTAIN_RING_RADIUS = 45.0f;
+constexpr float MOUNTAIN_RING_RADIUS_VARIATION = 5.0f;   // how uneven the ring's distance is
+constexpr float MOUNTAIN_BASE_WIDTH = 14.0f;
+constexpr float MOUNTAIN_BASE_HEIGHT = 9.0f;
+constexpr float MOUNTAIN_SIZE_VARIATION = 4.0f;           // how much taller/shorter peaks get
+constexpr float MOUNTAIN_DEPTH = 12.0f;
+
+constexpr int CLOUD_COUNT = 3;
+const glm::vec3 CLOUD_POSITIONS[CLOUD_COUNT] = {
+    glm::vec3(-6.0f, 8.0f, -10.0f),
+    glm::vec3(8.0f, 9.0f, -13.0f),
+    glm::vec3(1.0f, 7.5f, 7.0f),
+};
+constexpr float CLOUD_SCALES[CLOUD_COUNT] = { 2.2f, 2.6f, 1.8f };
+
+constexpr int ROCK_COUNT = 3;
+const glm::vec3 ROCK_POSITIONS[ROCK_COUNT] = {
+    glm::vec3(-4.0f, 0.0f, 5.0f),
+    glm::vec3(9.0f, 0.0f, 3.0f),
+    glm::vec3(-7.5f, 0.0f, -6.0f),
+};
+constexpr float ROCK_SCALES[ROCK_COUNT] = { 0.5f, 0.4f, 0.45f };
+
+} // namespace SceneConfig
+
+// Every object that can be shown, either together (All) or alone. Pressing
+// the matching number key switches to that one; 'E' switches to the enemy
+// ship. See processInput().
+enum class ViewMode {
+    All = 0,
+    Ship,
+    Cannon,
+    Flag,
+    Crew,
+    Sun,
+    Water,
+    Barrel,
+    Crate,
+    Cannonball,
+    EnemyShip
 };
 
-constexpr int VERTEX_COUNT = 4;
-constexpr int INDEX_COUNT = 6;
-constexpr int FLOATS_PER_VERTEX = 6;
-constexpr int POSITION_COMPONENTS = 3;
-constexpr int COLOR_COMPONENTS = 3;
-
-// Phase 9: the quad does not move. It sits to one side, at the same distance
-// from the camera as the other two triangles rest at, so it is easy to find
-// and does not overlap them. Its ONLY job is to prove indexed drawing works;
-// giving it motion too would blur that one idea with Phases 4-7's.
-const glm::vec3 POSITION(-1.8f, 0.0f, 0.0f);
-
-} // namespace QuadConfig
-
-namespace CubeConfig {
-
-// Phase 10: the cube's size. It is the ONLY dimension this cube has - every
-// face reaches exactly this far from the centre on every axis, so the cube
-// stays a true cube. Doubling it makes the cube twice as wide, tall, AND
-// deep at once. Giving width, height, and depth their own separate values
-// waits until Phase 16's reusable, parameterised mesh generators.
-constexpr float HALF_SIZE = 0.5f;
-
-// 24 vertices - 4 for EACH of the 6 faces, not 8 shared corners. A real cube
-// only has 8 corners, but a corner where three faces meet cannot share one
-// vertex between those faces here, because each face needs its OWN flat
-// colour, and a shared vertex can only carry one colour. Paying for that
-// with 24 vertices instead of 8 is a small, deliberate cost.
-//
-// Every face lists its 4 corners in the same order the quad already used:
-// a CCW (counter-clockwise) loop AS SEEN FROM OUTSIDE the cube, which is
-// what GL_CULL_FACE needs to keep a face visible instead of discarding it.
-constexpr float VERTICES[] = {
-    // +Z face (front, facing the camera) - blue
-    -HALF_SIZE, -HALF_SIZE,  HALF_SIZE,   0.0f, 0.0f, 1.0f,
-     HALF_SIZE, -HALF_SIZE,  HALF_SIZE,   0.0f, 0.0f, 1.0f,
-     HALF_SIZE,  HALF_SIZE,  HALF_SIZE,   0.0f, 0.0f, 1.0f,
-    -HALF_SIZE,  HALF_SIZE,  HALF_SIZE,   0.0f, 0.0f, 1.0f,
-
-    // -Z face (back) - yellow
-     HALF_SIZE, -HALF_SIZE, -HALF_SIZE,   1.0f, 1.0f, 0.0f,
-    -HALF_SIZE, -HALF_SIZE, -HALF_SIZE,   1.0f, 1.0f, 0.0f,
-    -HALF_SIZE,  HALF_SIZE, -HALF_SIZE,   1.0f, 1.0f, 0.0f,
-     HALF_SIZE,  HALF_SIZE, -HALF_SIZE,   1.0f, 1.0f, 0.0f,
-
-    // +X face (right) - red
-     HALF_SIZE, -HALF_SIZE,  HALF_SIZE,   1.0f, 0.0f, 0.0f,
-     HALF_SIZE, -HALF_SIZE, -HALF_SIZE,   1.0f, 0.0f, 0.0f,
-     HALF_SIZE,  HALF_SIZE, -HALF_SIZE,   1.0f, 0.0f, 0.0f,
-     HALF_SIZE,  HALF_SIZE,  HALF_SIZE,   1.0f, 0.0f, 0.0f,
-
-    // -X face (left) - cyan
-    -HALF_SIZE, -HALF_SIZE, -HALF_SIZE,   0.0f, 1.0f, 1.0f,
-    -HALF_SIZE, -HALF_SIZE,  HALF_SIZE,   0.0f, 1.0f, 1.0f,
-    -HALF_SIZE,  HALF_SIZE,  HALF_SIZE,   0.0f, 1.0f, 1.0f,
-    -HALF_SIZE,  HALF_SIZE, -HALF_SIZE,   0.0f, 1.0f, 1.0f,
-
-    // +Y face (top) - green
-    -HALF_SIZE,  HALF_SIZE,  HALF_SIZE,   0.0f, 1.0f, 0.0f,
-     HALF_SIZE,  HALF_SIZE,  HALF_SIZE,   0.0f, 1.0f, 0.0f,
-     HALF_SIZE,  HALF_SIZE, -HALF_SIZE,   0.0f, 1.0f, 0.0f,
-    -HALF_SIZE,  HALF_SIZE, -HALF_SIZE,   0.0f, 1.0f, 0.0f,
-
-    // -Y face (bottom) - magenta
-    -HALF_SIZE, -HALF_SIZE, -HALF_SIZE,   1.0f, 0.0f, 1.0f,
-     HALF_SIZE, -HALF_SIZE, -HALF_SIZE,   1.0f, 0.0f, 1.0f,
-     HALF_SIZE, -HALF_SIZE,  HALF_SIZE,   1.0f, 0.0f, 1.0f,
-    -HALF_SIZE, -HALF_SIZE,  HALF_SIZE,   1.0f, 0.0f, 1.0f,
+// What the camera should look at, how far back it should start, and how far
+// down it should tilt, for one ViewMode. Switching object needs a different
+// look-at point and a different starting distance - a cannonball and the
+// whole ship are not usefully framed from the same spot - and a flat object
+// like the sea shows almost nothing at a level (0 degree) angle, since a
+// perfectly flat surface viewed edge-on is just a thin line.
+struct ViewPreset {
+    glm::vec3 target;
+    float radius;
+    float pitchDegrees = 0.0f;
 };
 
-// 36 indices - 6 per face, following the exact {corner,corner,corner,
-// corner,corner,corner} pattern QuadConfig::INDICES already used, once for
-// each face's own 4 vertices. Face f's vertices start at row f*4, so its
-// two triangles are (f*4+0, f*4+1, f*4+2) and (f*4+2, f*4+3, f*4+0).
-constexpr unsigned int INDICES[] = {
-     0,  1,  2,   2,  3,  0,    // +Z face
-     4,  5,  6,   6,  7,  4,    // -Z face
-     8,  9, 10,  10, 11,  8,    // +X face
-    12, 13, 14,  14, 15, 12,    // -X face
-    16, 17, 18,  18, 19, 16,    // +Y face
-    20, 21, 22,  22, 23, 20,    // -Y face
-};
+static ViewPreset viewPresetFor(ViewMode mode)
+{
+    using namespace ShipShape;
 
-constexpr int VERTEX_COUNT = 24;
-constexpr int INDEX_COUNT = 36;
-constexpr int FLOATS_PER_VERTEX = 6;
-constexpr int POSITION_COMPONENTS = 3;
-constexpr int COLOR_COMPONENTS = 3;
+    switch (mode) {
+        case ViewMode::All:
+            // Midway between the two ships, pulled back far enough to see
+            // both at once.
+            return { glm::vec3(3.0f, 1.3f, -1.7f), 14.0f };
+        case ViewMode::Ship:       return { glm::vec3(0.0f, 1.5f, 0.0f), 9.0f };
+        case ViewMode::EnemyShip:  return { glm::vec3(0.0f, 1.5f, 0.0f), 9.0f };
+        case ViewMode::Cannon:     return { glm::vec3(MOUNT_X, DECK_TOP_Y + 0.35f, MOUNT_Z), 1.4f };
+        case ViewMode::Flag:       return { glm::vec3(0.0f, DECK_TOP_Y + MAST_HEIGHT + 0.13f, MIZZEN_MAST_Z), 1.0f };
+        case ViewMode::Crew:       return { glm::vec3(0.0f, 0.5f, 0.0f), 1.2f };
+        case ViewMode::Sun:        return { glm::vec3(0.0f, 0.0f, 0.0f), 3.5f };
+        // Tilted down 40 degrees - a level view of a flat surface is just an
+        // edge-on line, so this is the one object that needs to be looked
+        // AT from above to show anything useful at all.
+        case ViewMode::Water:      return { glm::vec3(0.0f, 0.0f, 0.0f), 10.0f, 40.0f };
+        case ViewMode::Barrel:     return { glm::vec3(0.0f, 0.15f, 0.0f), 0.8f };
+        // Tilted down slightly so the crossed lid straps - flat on top of
+        // the crate - are visible instead of edge-on.
+        case ViewMode::Crate:      return { glm::vec3(0.0f, 0.11f, 0.0f), 0.75f, 25.0f };
+        case ViewMode::Cannonball: return { glm::vec3(0.0f, 0.09f, 0.0f), 0.5f };
+    }
+    return { glm::vec3(0.0f), 5.0f };
+}
 
-// Phase 10: where the cube sits, away from the triangles and mirrored across
-// the quad so all three objects are easy to tell apart on screen.
-const glm::vec3 POSITION(1.8f, 0.0f, 0.0f);
-
-// How the cube turns. The axis is deliberately NOT one of X, Y, or Z alone -
-// a tilted axis means every face eventually faces the camera as the cube
-// spins, which is the real proof that this is a solid 3D object and not six
-// flat squares that happen to be glued together.
-constexpr float SPIN_SPEED = 0.6f;   // radians per second
-
-// glm::rotate expects its axis to already be unit length; glm::normalize is
-// not a compile-time function, so this cannot be constexpr like SPIN_SPEED,
-// but it only ever runs once, at program startup.
-const glm::vec3 SPIN_AXIS = glm::normalize(glm::vec3(0.4f, 1.0f, 0.3f));
-
-} // namespace CubeConfig
+static const char* viewModeName(ViewMode mode)
+{
+    switch (mode) {
+        case ViewMode::All:        return "All (the whole scene)";
+        case ViewMode::Ship:       return "Ship";
+        case ViewMode::EnemyShip:  return "Enemy ship";
+        case ViewMode::Cannon:     return "Cannon";
+        case ViewMode::Flag:       return "Flag";
+        case ViewMode::Crew:       return "Crew";
+        case ViewMode::Sun:        return "Sun";
+        case ViewMode::Water:      return "Water";
+        case ViewMode::Barrel:     return "Barrel";
+        case ViewMode::Crate:      return "Crate";
+        case ViewMode::Cannonball: return "Cannonball";
+    }
+    return "?";
+}
 
 // Time values needed by one frame. Keeping them together makes it clear which
 // time is absolute and which value describes only the previous frame.
@@ -328,96 +296,55 @@ struct FrameStats {
     int renderedFrames = 0;
 };
 
-// GPU handles for this phase's temporary triangle.
-// VAO remembers the vertex layout; VBO stores the vertex numbers.
-struct TriangleGpu {
-    GLuint vao = 0;
-    GLuint vbo = 0;
-};
-
-// Phase 9: the quad's GPU handles. It needs everything the triangle needs,
-// plus an EBO (Element Buffer Object): a third buffer holding QuadConfig's 6
-// indices, so the driver knows which of the 4 uploaded vertices to use for
-// each triangle corner.
-struct QuadGpu {
-    GLuint vao = 0;
-    GLuint vbo = 0;
-    GLuint ebo = 0;
-};
-
-// Phase 10: the cube's GPU handles. Same shape as QuadGpu - a VAO, a VBO, and
-// an EBO - because a cube is drawn exactly the same way a quad is, just with
-// more vertices and more indices. A shared `Mesh` type that both of these
-// could use instead of two near-identical structs arrives in Phase 14, once
-// there is enough repetition to justify it.
-struct CubeGpu {
-    GLuint vao = 0;
-    GLuint vbo = 0;
-    GLuint ebo = 0;
-};
-
 // Data that changes as the scene changes. updateScene() writes it and
 // renderScene() reads it, so neither function needs to know about the other.
 struct SceneState {
-    // Phase 12: the camera's own state - a distance and two angles, turned
-    // by mouse drag and scroll since Phase 13. Its default values give the
-    // exact same starting view Phases 7-11 used, so nothing changes on
-    // screen until the mouse is actually used.
     OrbitCamera camera;
 
-    // glm::mat4(1.0f) is the identity matrix: it moves nothing. Writing the 1.0f
-    // explicitly keeps this correct in every glm version.
-    glm::mat4 triangleModel = glm::mat4(1.0f);
-
-    // Phase 7: the camera's two matrices. Unlike triangleModel these do not
-    // depend on 'now' yet, because the camera itself does not move until
-    // Phase 12. They ARE rebuilt every frame, because uProjection depends on
-    // the window's aspect ratio, and the window can be resized at any time.
     glm::mat4 view = glm::mat4(1.0f);
     glm::mat4 projection = glm::mat4(1.0f);
 
-    // Phase 8: the second, reused draw of the same mesh. It is always the
-    // first triangle's own model matrix, shifted farther from the camera, so
-    // the two stay overlapping on screen no matter how the first one moves.
-    glm::mat4 farCopyModel = glm::mat4(1.0f);
+    // Which single object is being shown, and where the camera should be
+    // looking. Both start at their real values only once main() calls
+    // applyViewPreset() for ViewMode::All - see the comment there for why a
+    // default member initializer here is not enough.
+    ViewMode viewMode = ViewMode::All;
+    glm::vec3 viewTarget = glm::vec3(0.0f);
 
-    // Phase 9: the quad's model matrix. It never changes shape, only where it
-    // sits, so this is really just QuadConfig::POSITION turned into a matrix.
-    // It is still rebuilt every frame, for the same reason as everything
-    // else here: renderScene() should only ever read scene state, never
-    // calculate it.
-    glm::mat4 quadModel = glm::mat4(1.0f);
-
-    // Phase 10: the cube's model matrix. Unlike the quad, this one DOES
-    // depend on 'now' - the cube spins - so it earns being rebuilt every
-    // frame rather than just sitting there out of habit.
-    glm::mat4 cubeModel = glm::mat4(1.0f);
-
-    // Phase 8: toggled by the 'D' key. True matches the driver's normal
-    // behaviour: the nearer fragment wins regardless of draw order. False
-    // disables GL_DEPTH_TEST, so whichever triangle is drawn LAST simply
-    // overwrites the other's pixels, correct or not.
-    bool depthTestEnabled = true;
-    bool depthKeyWasDown = false;
-
-    // Phase 11: toggled by the 'W' key. False is the normal, solid view:
-    // GL_CULL_FACE stays on, so a wrongly-wound face is silently discarded.
-    // True switches to line-only rendering AND switches culling off, so
-    // every triangle's outline is visible, including one that solid mode
-    // would have thrown away.
+    // Toggled by the 'W' key: false is the normal solid view, true switches
+    // to line-only rendering so the hierarchy and the round shapes'
+    // triangles can be inspected directly.
     bool wireframeEnabled = false;
     bool wireframeKeyWasDown = false;
-
-    // Phase 6: toggled by the 'O' key. False builds the correct T * R * S
-    // order; true builds the same three matrices back to front, on purpose,
-    // so the two can be compared live.
-    bool reverseOrder = false;
-
-    // Remembers last frame's key state so a held-down key flips the toggle
-    // only once, on the frame it is first pressed, instead of roughly 120
-    // times a second for as long as it is held.
-    bool orderKeyWasDown = false;
 };
+
+// Applies one ViewMode's preset to the camera: what it looks at, how far
+// back it starts, and how far it tilts. Used both for switching object
+// during play and for setting up the very first frame's camera in main() -
+// a default member initializer on SceneState could not do this instead,
+// since OrbitCamera's own radius/yaw/pitch are declared before viewMode and
+// viewTarget, in a field SceneState does not own the definition of.
+static void applyViewPreset(SceneState& scene, ViewMode mode)
+{
+    const ViewPreset preset = viewPresetFor(mode);
+    scene.viewMode = mode;
+    scene.viewTarget = preset.target;
+    scene.camera.radius = preset.radius;
+    scene.camera.yaw = 0.0f;
+    scene.camera.pitch = glm::radians(preset.pitchDegrees);
+}
+
+// Switches to a new object, unless it is already the one being shown -
+// shared by every key that can switch object (the number keys and 'E'), so
+// there is only one place that decides what "switching object" means.
+static void switchViewMode(SceneState& scene, ViewMode newMode)
+{
+    if (newMode == scene.viewMode)
+        return;
+
+    applyViewPreset(scene, newMode);
+    std::printf("[view] %s\n", viewModeName(newMode));
+}
 
 static void glfwErrorCallback(int errorCode, const char* description)
 {
@@ -436,55 +363,34 @@ static void processInput(GLFWwindow* window, SceneState& scene)
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, GLFW_TRUE);
 
-    // Phase 13: the camera is no longer read here at all. It is driven by
-    // two GLFW callbacks in src/Camera.h instead, which GLFW calls directly
-    // from glfwPollEvents() whenever the mouse actually moves or scrolls -
-    // there is nothing for processInput() to poll every frame any more.
+    // The camera is driven by the two mouse callbacks in src/Camera.h, which
+    // GLFW calls directly whenever the mouse actually moves or scrolls -
+    // there is nothing for processInput() to poll for it every frame.
 
-    // Phase 8: 'D' switches GL_DEPTH_TEST off and on. Same edge-detection
-    // reason as 'O' below: without the "was it already down" check, holding
-    // the key would flip the state roughly 120 times a second.
-    const bool depthKeyIsDown = glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS;
-    if (depthKeyIsDown && !scene.depthKeyWasDown) {
-        scene.depthTestEnabled = !scene.depthTestEnabled;
-        std::printf(
-            "[depth] GL_DEPTH_TEST %s\n",
-            scene.depthTestEnabled
-                ? "ON (the nearer triangle wins, regardless of draw order)"
-                : "OFF (whichever triangle is drawn LAST wins, correct or not)");
-    }
-    scene.depthKeyWasDown = depthKeyIsDown;
-
-    // Phase 11: 'W' switches between solid and wireframe rendering, and
-    // between culling on and culling off. Same edge-detection reason as
-    // 'D' and 'O': without the "was it already down" check, holding the key
-    // would flip the state roughly 120 times a second.
+    // 'W' toggles wireframe. The "was it already down" check stops a held
+    // key from flipping the state roughly 120 times a second.
     const bool wireframeKeyIsDown = glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS;
     if (wireframeKeyIsDown && !scene.wireframeKeyWasDown) {
         scene.wireframeEnabled = !scene.wireframeEnabled;
-        std::printf(
-            "[wireframe] %s\n",
-            scene.wireframeEnabled
-                ? "ON, culling OFF (every triangle's outline is visible, front and back)"
-                : "OFF, culling ON (the normal solid view)");
+        std::printf("[wireframe] %s\n", scene.wireframeEnabled ? "ON" : "OFF");
     }
     scene.wireframeKeyWasDown = wireframeKeyIsDown;
 
-    // Phase 6: 'O' compares the correct T * R * S order against the same
-    // three matrices multiplied back to front. glfwGetKey reports the key as
-    // PRESSED for every frame it is held down, so without the "was it already
-    // down" check the order would flip roughly 120 times a second while the
-    // key is held, which looks like it does nothing.
-    const bool orderKeyIsDown = glfwGetKey(window, GLFW_KEY_O) == GLFW_PRESS;
-    if (orderKeyIsDown && !scene.orderKeyWasDown) {
-        scene.reverseOrder = !scene.reverseOrder;
-        std::printf(
-            "[order] %s\n",
-            scene.reverseOrder
-                ? "S * R * T (reversed on purpose - watch it smear)"
-                : "T * R * S (correct)");
+    // Number keys 0-9 each pick one ViewMode. Holding a key just keeps
+    // re-selecting the SAME mode every frame, which is harmless - unlike
+    // 'W' above, this needs no "was it already down" edge detection, since
+    // setting a value to what it already is changes nothing.
+    for (int digit = 0; digit <= 9; ++digit) {
+        if (glfwGetKey(window, GLFW_KEY_0 + digit) == GLFW_PRESS) {
+            switchViewMode(scene, static_cast<ViewMode>(digit));
+            break;
+        }
     }
-    scene.orderKeyWasDown = orderKeyIsDown;
+
+    // 'E' shows the enemy ship alone - it needs a letter key, since the
+    // ten ViewModes above already use every digit.
+    if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
+        switchViewMode(scene, ViewMode::EnemyShip);
 }
 
 static void startClock(FrameClock& clock)
@@ -503,109 +409,24 @@ static void updateClock(FrameClock& clock)
     clock.lastFrameTime = clock.now;
 }
 
-static void updateScene(
-    SceneState& scene,
-    float now,
-    float deltaTime,
-    int framebufferWidth,
-    int framebufferHeight)
+// Nothing in this scene moves yet, so the only per-frame scene data is the
+// camera's view and projection matrices - the projection is rebuilt every
+// frame because it depends on the window's current aspect ratio, which can
+// change if the window is resized.
+static void updateScene(SceneState& scene, int framebufferWidth, int framebufferHeight)
 {
-    // 'now' drives motion that follows a formula, like this slide.
-    // Nothing is stored between frames: the position is recalculated from the
-    // clock every time, so there is no table of positions to pre-compute.
-    const float offsetX =
-        TriangleMotion::SLIDE_DISTANCE * std::sin(TriangleMotion::SLIDE_SPEED * now);
+    // orbitCameraPosition() (src/Camera.h) returns an OFFSET from radius,
+    // yaw, and pitch - it says nothing about what point that offset is
+    // measured from. Phases 12-13 only ever looked at one fixed point near
+    // the origin, so adding it was never needed to get a correct picture.
+    // Now that different objects are looked at from very different points
+    // (the flag sits over two units up; a cannonball sits a few centimetres
+    // off the ground), the offset must be added to THIS object's own
+    // viewTarget, not left to orbit the origin regardless of where the
+    // object actually is.
+    const glm::vec3 eye = scene.viewTarget + orbitCameraPosition(scene.camera);
+    scene.view = glm::lookAt(eye, scene.viewTarget, CameraConfig::UP);
 
-    // Phase 7: the triangle's world-space depth. Positive moves it toward the
-    // camera's starting position (nearer, so it looks bigger); negative moves
-    // it away.
-    const float offsetZ =
-        TriangleDepth::DEPTH_AMPLITUDE * std::sin(TriangleDepth::DEPTH_SPEED * now);
-
-    // glm::translate(matrix, vector) returns 'matrix' with a move of 'vector'
-    // added. Starting from the identity matrix gives a pure translation.
-    const glm::mat4 slide =
-        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, offsetX, offsetZ));
-
-    // Phase 5: glm::rotate(matrix, angle, axis) works the same way, but adds a
-    // turn. The angle is in radians and comes from the clock, like the slide.
-    const float spinAngle = TriangleSpin::SPIN_SPEED * now;
-    const glm::mat4 spin =
-        glm::rotate(glm::mat4(1.0f), spinAngle, TriangleSpin::SPIN_AXIS);
-
-    // Phase 6: glm::scale(matrix, vector) works the same way again, but
-    // resizes instead of moving or turning. A pulsing factor between
-    // PULSE_MIN and PULSE_MAX, applied equally on x and y, keeps the
-    // triangle's proportions correct while it grows and shrinks.
-    const float scalePulseMid =
-        (TriangleScale::PULSE_MIN + TriangleScale::PULSE_MAX) * 0.1f;
-    const float scalePulseAmp =
-        (TriangleScale::PULSE_MAX - TriangleScale::PULSE_MIN) * 0.5f;
-    const float scaleFactor =
-        scalePulseMid + scalePulseAmp * std::sin(TriangleScale::PULSE_SPEED * now);
-    const glm::mat4 scaleMat =
-        glm::scale(glm::mat4(1.0f), glm::vec3(scaleFactor, scaleFactor, 1.0f));
-
-    // Join all three by multiplying. Read the product from RIGHT to LEFT,
-    // because the vertex meets the rightmost matrix first. The correct order
-    // is T * R * S:
-    //   1. scale - resize around the origin, where the corners sit;
-    //   2. spin  - turn the resized triangle around the origin;
-    //   3. slide - carry the turned, resized triangle to its place on screen.
-    // Each step only ever acts on the origin-centred result of the step
-    // before it, so the triangle grows and shrinks on the spot, spins on the
-    // spot, and both of those together slide as one rigid trip.
-    //
-    // 'O' rebuilds the same three matrices back to front: S * R * T. That
-    // order slides first, so a factor meant to resize the shape instead
-    // stretches how FAR it slides, and a spin meant to turn the shape instead
-    // swings the whole slid-out trip around the origin. The shape looks like
-    // it smears through a wide, pulsing loop instead of pulsing and spinning
-    // on the spot. Nothing here is broken; only the sequence of operations,
-    // read right to left, is different.
-    scene.triangleModel = scene.reverseOrder
-        ? scaleMat * spin * slide    // S * R * T, deliberately backwards
-        : slide * spin * scaleMat;   // T * R * S, correct
-
-    // Phase 8: build the far copy by adding ONE more translation on the LEFT
-    // of the already-finished near-copy matrix. Left means "done last", so
-    // this shifts the whole placed-turned-scaled triangle straight along
-    // world z, without touching its shape, rotation, or size at all - the
-    // same "translate the finished result" idea Phase 4 introduced, just
-    // applied to a matrix instead of a raw vertex.
-    const glm::mat4 farCopyShift = glm::translate(
-        glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, DepthTestConfig::FAR_COPY_Z_OFFSET));
-    scene.farCopyModel = farCopyShift * scene.triangleModel;
-
-    // Phase 9: the quad's matrix is a single, unmoving translation.
-    scene.quadModel = glm::translate(glm::mat4(1.0f), QuadConfig::POSITION);
-
-    // Phase 10: the cube's matrix is T * R, the same pattern Phase 5
-    // introduced: spin the cube around its own centre first (the origin,
-    // where every one of its 24 vertices is measured from), THEN carry the
-    // already-turning cube out to its resting place. Doing it the other way
-    // round would make the cube orbit CubeConfig::POSITION instead of
-    // spinning on the spot - exactly Phase 5's wobble lesson, at a larger
-    // scale.
-    const float cubeSpinAngle = CubeConfig::SPIN_SPEED * now;
-    const glm::mat4 cubeSpin =
-        glm::rotate(glm::mat4(1.0f), cubeSpinAngle, CubeConfig::SPIN_AXIS);
-    const glm::mat4 cubeSlide =
-        glm::translate(glm::mat4(1.0f), CubeConfig::POSITION);
-    scene.cubeModel = cubeSlide * cubeSpin;
-
-    // Phase 7: glm::lookAt(eye, target, up) builds the view matrix from three
-    // vectors instead of a translate/rotate/scale recipe. It re-measures every
-    // WORLD position as seen from the camera, so the camera can stay at the
-    // origin of its own space while everything else moves around it.
-    const glm::vec3 eye = orbitCameraPosition(scene.camera);
-    scene.view = glm::lookAt(eye, CameraConfig::TARGET, CameraConfig::UP);
-
-    // The projection depends on the window's shape, not the clock, so it is
-    // rebuilt from the CURRENT framebuffer size every frame. A minimised
-    // window can report a height of 0, and dividing by that would be
-    // undefined, so a height of at least 1 is always used for the aspect
-    // ratio.
     const int safeHeight = std::max(framebufferHeight, 1);
     const float aspectRatio =
         static_cast<float>(framebufferWidth) / static_cast<float>(safeHeight);
@@ -614,237 +435,180 @@ static void updateScene(
         aspectRatio,
         CameraConfig::NEAR_PLANE,
         CameraConfig::FAR_PLANE);
-
-    // deltaTime is for input-driven motion such as steering (a later phase).
-    // This cast tells the compiler that leaving it unused is intentional.
-    static_cast<void>(deltaTime);
 }
 
-static bool createTriangle(TriangleGpu& triangle)
+// Where the mouse is "pointing at" in the 3D scene, at one particular
+// height (planeY). This is how a 2D mouse position ever becomes a 3D
+// coordinate at all: the mouse does not point at a single spot in 3D on
+// its own (a flat screen has no depth), so instead this builds the entire
+// LINE the mouse is looking along - from right behind the screen glass, to
+// far into the distance - and then asks where that line crosses one flat,
+// horizontal plane at height 'planeY'. That crossing point is the answer.
+struct MouseWorldPoint {
+    glm::vec3 position = glm::vec3(0.0f);
+    bool valid = false;   // false if the mouse is looking along the plane, or away from it
+};
+
+static MouseWorldPoint mouseToWorldPoint(
+    GLFWwindow* window,
+    int framebufferWidth,
+    int framebufferHeight,
+    const glm::mat4& view,
+    const glm::mat4& projection,
+    float planeY)
 {
-    glGenVertexArrays(1, &triangle.vao);
-    glGenBuffers(1, &triangle.vbo);
+    double mouseX = 0.0;
+    double mouseY = 0.0;
+    glfwGetCursorPos(window, &mouseX, &mouseY);
 
-    glBindVertexArray(triangle.vao);
-    glBindBuffer(GL_ARRAY_BUFFER, triangle.vbo);
-    glBufferData(
-        GL_ARRAY_BUFFER,
-        sizeof(TriangleConfig::VERTICES),
-        TriangleConfig::VERTICES,
-        GL_STATIC_DRAW);
+    // glm::unProject expects window coordinates measured with Y growing
+    // UPWARD from the window's bottom edge; GLFW reports the cursor with Y
+    // growing DOWNWARD from the top, so it has to be flipped here first.
+    const float flippedY = static_cast<float>(framebufferHeight) - static_cast<float>(mouseY);
+    const glm::vec4 viewport(0.0f, 0.0f, static_cast<float>(framebufferWidth), static_cast<float>(framebufferHeight));
 
-    const GLsizei stride = static_cast<GLsizei>(
-        TriangleConfig::FLOATS_PER_VERTEX * sizeof(float));
+    // Un-projecting the SAME (x, y) screen position at two different depths
+    // (z = 0, the near plane, and z = 1, the far plane) gives two points in
+    // the 3D world - and the straight line through both of them is exactly
+    // the line the mouse is looking along.
+    const glm::vec3 nearPoint = glm::unProject(glm::vec3(mouseX, flippedY, 0.0f), view, projection, viewport);
+    const glm::vec3 farPoint = glm::unProject(glm::vec3(mouseX, flippedY, 1.0f), view, projection, viewport);
+    const glm::vec3 rayDirection = glm::normalize(farPoint - nearPoint);
 
-    // Attribute 0 reads the first three floats: x, y, z.
-    glVertexAttribPointer(
-        0,
-        TriangleConfig::POSITION_COMPONENTS,
-        GL_FLOAT,
-        GL_FALSE,
-        stride,
-        nullptr);
-    glEnableVertexAttribArray(0);
+    MouseWorldPoint result;
 
-    // Attribute 1 starts after the three position floats and reads r, g, b.
-    glVertexAttribPointer(
-        1,
-        TriangleConfig::COLOR_COMPONENTS,
-        GL_FLOAT,
-        GL_FALSE,
-        stride,
-        reinterpret_cast<const void*>(
-            TriangleConfig::POSITION_COMPONENTS * sizeof(float)));
-    glEnableVertexAttribArray(1);
+    // If the line is (almost) perfectly level, it never reaches a
+    // different height at all, so it either never crosses 'planeY' or lies
+    // flat along it everywhere - neither gives one useful answer.
+    if (std::fabs(rayDirection.y) < 0.0001f)
+        return result;
 
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glBindVertexArray(0);
+    const float distanceAlongLine = (planeY - nearPoint.y) / rayDirection.y;
 
-    const GLenum error = glGetError();
-    if (error != GL_NO_ERROR) {
-        std::fprintf(stderr, "[triangle] OpenGL setup error: 0x%04X\n", error);
-        return false;
+    // A negative distance would mean the crossing point is BEHIND the
+    // camera - looking up and away from a low plane, for instance - which
+    // is not somewhere the mouse could actually be "pointing at".
+    if (distanceAlongLine < 0.0f)
+        return result;
+
+    result.position = nearPoint + rayDirection * distanceAlongLine;
+    result.valid = true;
+    return result;
+}
+
+// Shows where the mouse is pointing, live, in the window's own title bar -
+// the same "HUD via window title" technique this project has used since
+// its very first frame-timing report, just applied to a second piece of
+// information now. Two heights are shown together: y = 0 (sea level, and
+// also every object's own natural "base" - a hull's bottom, a crew
+// member's feet - since every isolated single-object view draws that
+// object with its root sitting at the world origin), and whatever height
+// the camera is currently looking at (scene.viewTarget.y), which is
+// usually a more useful reading for a part that sits well above the
+// ground, like the flag or the wheel.
+static void updateMouseCoordinateTitle(
+    GLFWwindow* window,
+    const SceneState& scene,
+    int framebufferWidth,
+    int framebufferHeight)
+{
+    const MouseWorldPoint atGround = mouseToWorldPoint(
+        window, framebufferWidth, framebufferHeight, scene.view, scene.projection, 0.0f);
+    const MouseWorldPoint atTarget = mouseToWorldPoint(
+        window, framebufferWidth, framebufferHeight, scene.view, scene.projection, scene.viewTarget.y);
+
+    char groundText[64];
+    if (atGround.valid) {
+        std::snprintf(groundText, sizeof(groundText), "X=%6.2f Z=%6.2f", atGround.position.x, atGround.position.z);
+    } else {
+        std::snprintf(groundText, sizeof(groundText), "(not looking at this height)");
     }
 
-    return triangle.vao != 0 && triangle.vbo != 0;
-}
-
-static void destroyTriangle(TriangleGpu& triangle)
-{
-    if (triangle.vbo != 0)
-        glDeleteBuffers(1, &triangle.vbo);
-
-    if (triangle.vao != 0)
-        glDeleteVertexArrays(1, &triangle.vao);
-
-    triangle.vbo = 0;
-    triangle.vao = 0;
-}
-
-static bool createQuad(QuadGpu& quad)
-{
-    glGenVertexArrays(1, &quad.vao);
-    glGenBuffers(1, &quad.vbo);
-    glGenBuffers(1, &quad.ebo);
-
-    glBindVertexArray(quad.vao);
-
-    // The vertex data: this half is identical in kind to createTriangle().
-    glBindBuffer(GL_ARRAY_BUFFER, quad.vbo);
-    glBufferData(
-        GL_ARRAY_BUFFER,
-        sizeof(QuadConfig::VERTICES),
-        QuadConfig::VERTICES,
-        GL_STATIC_DRAW);
-
-    // The index data: new in this phase. GL_ELEMENT_ARRAY_BUFFER is a
-    // different KIND of buffer to GL_ARRAY_BUFFER - it does not hold
-    // per-vertex data at all, it holds a list of which vertex to use next.
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, quad.ebo);
-    glBufferData(
-        GL_ELEMENT_ARRAY_BUFFER,
-        sizeof(QuadConfig::INDICES),
-        QuadConfig::INDICES,
-        GL_STATIC_DRAW);
-
-    const GLsizei stride = static_cast<GLsizei>(
-        QuadConfig::FLOATS_PER_VERTEX * sizeof(float));
-
-    glVertexAttribPointer(
-        0,
-        QuadConfig::POSITION_COMPONENTS,
-        GL_FLOAT,
-        GL_FALSE,
-        stride,
-        nullptr);
-    glEnableVertexAttribArray(0);
-
-    glVertexAttribPointer(
-        1,
-        QuadConfig::COLOR_COMPONENTS,
-        GL_FLOAT,
-        GL_FALSE,
-        stride,
-        reinterpret_cast<const void*>(
-            QuadConfig::POSITION_COMPONENTS * sizeof(float)));
-    glEnableVertexAttribArray(1);
-
-    // Unbind the VBO - safe any time. The EBO is NOT unbound here: a VAO
-    // remembers which GL_ELEMENT_ARRAY_BUFFER was bound while it was bound,
-    // and unbinding the EBO now would erase that memory, leaving this VAO
-    // with no index buffer at all. Unbinding the VAO first, below, protects
-    // the EBO binding it just recorded.
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glBindVertexArray(0);
-
-    const GLenum error = glGetError();
-    if (error != GL_NO_ERROR) {
-        std::fprintf(stderr, "[quad] OpenGL setup error: 0x%04X\n", error);
-        return false;
+    char targetText[64];
+    if (atTarget.valid) {
+        std::snprintf(targetText, sizeof(targetText), "X=%6.2f Z=%6.2f", atTarget.position.x, atTarget.position.z);
+    } else {
+        std::snprintf(targetText, sizeof(targetText), "(not looking at this height)");
     }
 
-    return quad.vao != 0 && quad.vbo != 0 && quad.ebo != 0;
+    char title[320];
+    std::snprintf(
+        title, sizeof(title),
+        "%s | Mouse at y=0.00: %s | at y=%5.2f: %s",
+        AppConfig::WINDOW_TITLE,
+        groundText,
+        static_cast<double>(scene.viewTarget.y),
+        targetText);
+
+    glfwSetWindowTitle(window, title);
 }
 
-static void destroyQuad(QuadGpu& quad)
+// The sea, drawn at whatever root it is given - the world origin in every
+// current use, but kept as a parameter for the same reason every other
+// draw function here takes one: nothing assumes it always sits at (0, 0, 0).
+static void drawWater(ShaderProgram& shader, const Mesh& unitCube, const glm::mat4& root)
 {
-    if (quad.ebo != 0)
-        glDeleteBuffers(1, &quad.ebo);
-
-    if (quad.vbo != 0)
-        glDeleteBuffers(1, &quad.vbo);
-
-    if (quad.vao != 0)
-        glDeleteVertexArrays(1, &quad.vao);
-
-    quad.ebo = 0;
-    quad.vbo = 0;
-    quad.vao = 0;
+    const glm::mat4 frame = glm::scale(
+        glm::translate(root, glm::vec3(0.0f, -SceneConfig::WATER_THICKNESS * 0.5f, 0.0f)),
+        glm::vec3(SceneConfig::WATER_WIDTH, SceneConfig::WATER_THICKNESS, SceneConfig::WATER_LENGTH));
+    shader.setMat4("uModel", frame);
+    shader.setVec3("uTint", SceneConfig::WATER_COLOR);
+    unitCube.draw();
 }
 
-// Line for line the same recipe as createQuad(): more vertices and indices,
-// but the exact same VAO/VBO/EBO steps, in the exact same order.
-static bool createCube(CubeGpu& cube)
+// The sun: an outer sphere and a smaller, brighter inner sphere sharing the
+// same centre - see SceneConfig::SUN_POSITION's comment for why it sits
+// where it does, and why two spheres instead of one.
+static void drawSun(ShaderProgram& shader, const Mesh& unitSphere, const glm::mat4& root)
 {
-    glGenVertexArrays(1, &cube.vao);
-    glGenBuffers(1, &cube.vbo);
-    glGenBuffers(1, &cube.ebo);
+    shader.setMat4("uModel", glm::scale(root, glm::vec3(SceneConfig::SUN_RADIUS * 2.0f)));
+    shader.setVec3("uTint", SceneConfig::SUN_COLOR);
+    unitSphere.draw();
 
-    glBindVertexArray(cube.vao);
-
-    glBindBuffer(GL_ARRAY_BUFFER, cube.vbo);
-    glBufferData(
-        GL_ARRAY_BUFFER,
-        sizeof(CubeConfig::VERTICES),
-        CubeConfig::VERTICES,
-        GL_STATIC_DRAW);
-
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, cube.ebo);
-    glBufferData(
-        GL_ELEMENT_ARRAY_BUFFER,
-        sizeof(CubeConfig::INDICES),
-        CubeConfig::INDICES,
-        GL_STATIC_DRAW);
-
-    const GLsizei stride = static_cast<GLsizei>(
-        CubeConfig::FLOATS_PER_VERTEX * sizeof(float));
-
-    glVertexAttribPointer(
-        0,
-        CubeConfig::POSITION_COMPONENTS,
-        GL_FLOAT,
-        GL_FALSE,
-        stride,
-        nullptr);
-    glEnableVertexAttribArray(0);
-
-    glVertexAttribPointer(
-        1,
-        CubeConfig::COLOR_COMPONENTS,
-        GL_FLOAT,
-        GL_FALSE,
-        stride,
-        reinterpret_cast<const void*>(
-            CubeConfig::POSITION_COMPONENTS * sizeof(float)));
-    glEnableVertexAttribArray(1);
-
-    // Same rule as createQuad(): unbind the VBO, but not the EBO, and unbind
-    // the VAO last so the EBO binding it recorded survives.
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glBindVertexArray(0);
-
-    const GLenum error = glGetError();
-    if (error != GL_NO_ERROR) {
-        std::fprintf(stderr, "[cube] OpenGL setup error: 0x%04X\n", error);
-        return false;
-    }
-
-    return cube.vao != 0 && cube.vbo != 0 && cube.ebo != 0;
+    shader.setMat4("uModel", glm::scale(root, glm::vec3(SceneConfig::SUN_CORE_RADIUS * 2.0f)));
+    shader.setVec3("uTint", SceneConfig::SUN_CORE_COLOR);
+    unitSphere.draw();
 }
 
-static void destroyCube(CubeGpu& cube)
+// Where the 'index'-th mountain out of 'count' evenly spaced around a full
+// circle sits, and how big it is. A small amount of size and distance
+// variation - based on the index alone, through sin/cos, not a random
+// number generator - keeps every mountain from being an identical copy
+// spaced in a perfect, obviously mechanical circle, while still producing
+// the exact same scene on every run.
+struct MountainPlacement {
+    glm::vec3 position;
+    float width;
+    float height;
+    float depth;
+};
+
+static MountainPlacement mountainRingPlacement(int index, int count)
 {
-    if (cube.ebo != 0)
-        glDeleteBuffers(1, &cube.ebo);
+    const float angle = 360.0f * static_cast<float>(index) / static_cast<float>(count);
+    const float angleRad = glm::radians(angle);
 
-    if (cube.vbo != 0)
-        glDeleteBuffers(1, &cube.vbo);
+    const float radius = SceneConfig::MOUNTAIN_RING_RADIUS
+        + std::sin(angleRad * 3.0f) * SceneConfig::MOUNTAIN_RING_RADIUS_VARIATION;
+    const float sizeFactor = std::cos(angleRad * 5.0f);
 
-    if (cube.vao != 0)
-        glDeleteVertexArrays(1, &cube.vao);
-
-    cube.ebo = 0;
-    cube.vbo = 0;
-    cube.vao = 0;
+    MountainPlacement placement;
+    placement.position = glm::vec3(radius * std::cos(angleRad), 0.0f, radius * std::sin(angleRad));
+    placement.width = SceneConfig::MOUNTAIN_BASE_WIDTH + sizeFactor * SceneConfig::MOUNTAIN_SIZE_VARIATION;
+    placement.height = SceneConfig::MOUNTAIN_BASE_HEIGHT + sizeFactor * (SceneConfig::MOUNTAIN_SIZE_VARIATION * 0.6f);
+    placement.depth = SceneConfig::MOUNTAIN_DEPTH;
+    return placement;
 }
 
 // The shader is no longer passed as const: setting a uniform changes the
 // shader program, so this function can no longer promise to leave it alone.
 static void renderScene(
     ShaderProgram& shader,
-    const TriangleGpu& triangle,
-    const QuadGpu& quad,
-    const CubeGpu& cube,
+    const Mesh& unitCube,
+    const Mesh& unitCylinder,
+    const Mesh& unitSphere,
+    const Mesh& hullShape,
+    const Mesh& mountainShape,
     const SceneState& scene)
 {
     glClearColor(
@@ -852,90 +616,100 @@ static void renderScene(
         AppConfig::CLEAR_COLOR.g,
         AppConfig::CLEAR_COLOR.b,
         1.0f);
-
-    // Clear both buffers every frame. The colour buffer holds visible pixels;
-    // the depth buffer will decide which 3D surfaces are closest in later phases.
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     // use() first: a uniform is written into whichever program is currently
     // in use, so setting it before use() would send the value nowhere.
     shader.use();
-
-    // Phase 7: the camera matrices are the same for every object drawn this
-    // frame, so they are uploaded once, before either draw call.
     shader.setMat4("uView", scene.view);
     shader.setMat4("uProjection", scene.projection);
 
-    // Phase 8: this ONE line decides whether depth is honoured at all. It is
-    // set fresh every frame from the 'D' key's state, rather than relying on
-    // whatever main() enabled once at startup, so the effect is visible the
-    // instant the key is pressed.
-    if (scene.depthTestEnabled)
-        glEnable(GL_DEPTH_TEST);
-    else
-        glDisable(GL_DEPTH_TEST);
+    // 'W' switches to line-only rendering so the round shapes' triangles and
+    // the hierarchy's separate parts can be inspected directly.
+    glPolygonMode(GL_FRONT_AND_BACK, scene.wireframeEnabled ? GL_LINE : GL_FILL);
 
-    // Phase 11: 'W' controls TWO pieces of GL state together, for one reason.
-    // glPolygonMode alone would not be enough: a triangle that GL_CULL_FACE
-    // discards for facing the wrong way is thrown away BEFORE the polygon
-    // mode ever gets a chance to draw its outline. Switching culling off at
-    // the same moment as switching to line mode is what lets a culled
-    // face's edges actually appear.
-    if (scene.wireframeEnabled) {
-        glDisable(GL_CULL_FACE);
-        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-    } else {
-        glEnable(GL_CULL_FACE);
-        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+    const glm::mat4 origin(1.0f);
+    const glm::mat4 shipRoot = glm::translate(glm::mat4(1.0f), SceneConfig::SHIP_POSITION);
+
+    switch (scene.viewMode) {
+        case ViewMode::All: {
+            drawWater(shader, unitCube, glm::mat4(1.0f));
+            drawSun(shader, unitSphere, glm::translate(glm::mat4(1.0f), SceneConfig::SUN_POSITION));
+
+            // Background scenery: a full ring of mountains all the way
+            // around the scene, drifting clouds, and rocks breaking the
+            // water's surface.
+            for (int i = 0; i < SceneConfig::MOUNTAIN_RING_COUNT; ++i) {
+                const MountainPlacement placement =
+                    mountainRingPlacement(i, SceneConfig::MOUNTAIN_RING_COUNT);
+                drawMountain(
+                    shader, mountainShape, unitSphere,
+                    glm::translate(glm::mat4(1.0f), placement.position),
+                    placement.width, placement.height, placement.depth);
+            }
+            for (int i = 0; i < SceneConfig::CLOUD_COUNT; ++i) {
+                drawCloud(
+                    shader, unitSphere,
+                    glm::translate(glm::mat4(1.0f), SceneConfig::CLOUD_POSITIONS[i]),
+                    SceneConfig::CLOUD_SCALES[i]);
+            }
+            for (int i = 0; i < SceneConfig::ROCK_COUNT; ++i) {
+                drawRock(
+                    shader, unitSphere,
+                    glm::translate(glm::mat4(1.0f), SceneConfig::ROCK_POSITIONS[i]),
+                    SceneConfig::ROCK_SCALES[i]);
+            }
+
+            // The player's ship, its crew, and its deck props.
+            drawShip(shader, unitCube, unitCylinder, unitSphere, hullShape, shipRoot);
+            for (int i = 0; i < SceneConfig::CREW_COUNT; ++i) {
+                drawCrewMember(
+                    shader, unitCube, unitSphere,
+                    glm::translate(shipRoot, SceneConfig::CREW_LOCAL_POSITIONS[i]),
+                    SceneConfig::CREW_SHIRT_COLORS[i]);
+            }
+            drawBarrel(shader, unitCylinder, glm::translate(shipRoot, SceneConfig::BARREL_LOCAL_POSITION));
+            drawCrate(shader, unitCube, glm::translate(shipRoot, SceneConfig::CRATE_LOCAL_POSITION));
+            drawCannonball(shader, unitSphere, glm::translate(shipRoot, SceneConfig::CANNONBALL_LOCAL_POSITION));
+
+            // The enemy ship, turned to face the player's.
+            const glm::mat4 enemyShipRoot = glm::rotate(
+                glm::translate(glm::mat4(1.0f), SceneConfig::ENEMY_SHIP_POSITION),
+                glm::radians(180.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+            drawShip(shader, unitCube, unitCylinder, unitSphere, hullShape, enemyShipRoot, ShipShape::ENEMY_PALETTE);
+            break;
+        }
+        case ViewMode::Ship:
+            drawShip(shader, unitCube, unitCylinder, unitSphere, hullShape, origin);
+            break;
+        case ViewMode::EnemyShip:
+            drawShip(shader, unitCube, unitCylinder, unitSphere, hullShape, origin, ShipShape::ENEMY_PALETTE);
+            break;
+        case ViewMode::Cannon:
+            drawCannon(shader, unitCube, unitCylinder, origin);
+            break;
+        case ViewMode::Flag:
+            drawFlag(shader, unitCube, origin);
+            break;
+        case ViewMode::Crew:
+            drawCrewMember(shader, unitCube, unitSphere, origin);
+            break;
+        case ViewMode::Sun:
+            drawSun(shader, unitSphere, origin);
+            break;
+        case ViewMode::Water:
+            drawWater(shader, unitCube, origin);
+            break;
+        case ViewMode::Barrel:
+            drawBarrel(shader, unitCylinder, origin);
+            break;
+        case ViewMode::Crate:
+            drawCrate(shader, unitCube, origin);
+            break;
+        case ViewMode::Cannonball:
+            drawCannonball(shader, unitSphere, origin);
+            break;
     }
-
-    glBindVertexArray(triangle.vao);
-
-    // Draw 1: the near copy, drawn FIRST.
-    shader.setVec3("uTint", AppConfig::TINT);
-    shader.setMat4("uModel", scene.triangleModel);
-    glDrawArrays(GL_TRIANGLES, 0, TriangleConfig::VERTEX_COUNT);
-
-    // Draw 2: the SAME mesh again, at DepthTestConfig::FAR_COPY_Z_OFFSET
-    // farther away, drawn SECOND. Nothing here is duplicated except the draw
-    // call itself: same VAO, same vertex data, just a different uModel and
-    // uTint. Drawing the farther copy LAST is deliberate - with depth testing
-    // off, its "wrong" pixels are the ones that end up on screen, which is
-    // exactly what makes GL_DEPTH_TEST worth having.
-    shader.setVec3("uTint", DepthTestConfig::FAR_COPY_TINT);
-    shader.setMat4("uModel", scene.farCopyModel);
-    glDrawArrays(GL_TRIANGLES, 0, TriangleConfig::VERTEX_COUNT);
-
-    // Draw 3: the indexed quad. A different VAO must be bound first, because
-    // the two triangles' VAO has no knowledge of the quad's vertices or its
-    // EBO - each VAO only remembers the buffers it was bound to at the time.
-    //
-    // uTint is (1, 1, 1) here on purpose: this quad's four corners already
-    // carry their own distinct colours (Phase 2's idea), so the tint should
-    // leave them alone rather than filtering them the way Phase 3 does for
-    // the triangle.
-    glBindVertexArray(quad.vao);
-    shader.setVec3("uTint", glm::vec3(1.0f, 1.0f, 1.0f));
-    shader.setMat4("uModel", scene.quadModel);
-
-    // glDrawElements reads QuadConfig::INDICES from the EBO already bound
-    // inside quad.vao, rather than walking through the VBO in order the way
-    // glDrawArrays does. The last argument is nullptr because the indices
-    // live in a real GPU buffer, at offset 0 - it is not a CPU array pointer.
-    glDrawElements(GL_TRIANGLES, QuadConfig::INDEX_COUNT, GL_UNSIGNED_INT, nullptr);
-
-    // Draw 4: the cube. A third VAO, for the same reason the quad needed a
-    // second one - the triangles' VAO and the quad's VAO each only know
-    // about their own buffers.
-    //
-    // uTint stays (1, 1, 1): each of the cube's 24 vertices already carries
-    // its own face colour, so nothing should filter it.
-    glBindVertexArray(cube.vao);
-    shader.setVec3("uTint", glm::vec3(1.0f, 1.0f, 1.0f));
-    shader.setMat4("uModel", scene.cubeModel);
-    glDrawElements(GL_TRIANGLES, CubeConfig::INDEX_COUNT, GL_UNSIGNED_INT, nullptr);
-
-    glBindVertexArray(0);
 }
 
 static void reportFrame(FrameStats& stats, const FrameClock& clock)
@@ -970,10 +744,15 @@ int main()
         return 1;
     }
 
-    // Ask the driver for modern OpenGL 3.3 Core. Later phases will use GLSL 330.
+    // Ask the driver for modern OpenGL 3.3 Core.
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
+    // Ask for a multisampled framebuffer - see AppConfig::MSAA_SAMPLES.
+    // This must be requested before the window is created; the framebuffer
+    // it produces cannot be changed afterward.
+    glfwWindowHint(GLFW_SAMPLES, AppConfig::MSAA_SAMPLES);
 
 #ifdef __APPLE__
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
@@ -1017,17 +796,27 @@ int main()
     glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
     glViewport(0, 0, framebufferWidth, framebufferHeight);
 
-    // Both of these are only the startup defaults now. GL_DEPTH_TEST has been
-    // dynamic since Phase 8, and GL_CULL_FACE joins it in Phase 11:
-    // renderScene() sets both fresh every frame from the 'D' and 'W' keys'
-    // state, so these two lines matter only for the very first frame, before
-    // either key has been read.
+    // Depth testing stays on always now - the scene has real, overlapping 3D
+    // geometry (the ship sits in front of and above the sea, the crew member
+    // stands in front of the mast, and so on), so this is no longer an
+    // on/off teaching toggle the way it was in the phase plan.
+    //
+    // Face culling stays OFF: it is a performance optimisation, not a
+    // correctness requirement, and this scene's thin parts (sails, the flag)
+    // and round parts (masts, the barrel, the sun, the head) are far more
+    // useful to see from every angle while still being built and tuned than
+    // to have half-invisible by default.
     glEnable(GL_DEPTH_TEST);
-    glEnable(GL_CULL_FACE);
+
+    // Turns on the multisampling the window was created with above -
+    // without this, the extra samples GLFW allocated are never blended, and
+    // edges stay just as hard-edged as before.
+    glEnable(GL_MULTISAMPLE);
 
     std::printf("OpenGL   : %s\n", glGetString(GL_VERSION));
     std::printf("GLSL     : %s\n", glGetString(GL_SHADING_LANGUAGE_VERSION));
     std::printf("Renderer : %s\n", glGetString(GL_RENDERER));
+
     ShaderProgram shader;
     if (!shader.loadFromFiles(
             AppConfig::VERTEX_SHADER_PATH,
@@ -1037,53 +826,50 @@ int main()
         return 1;
     }
 
-    TriangleGpu triangle;
-    if (!createTriangle(triangle)) {
-        std::fprintf(stderr, "Failed to create the shader-test triangle.\n");
-        destroyTriangle(triangle);
+    // Five reusable unit meshes. Every object in the scene - the sea, the
+    // sun, both ships, every crew member, every prop, and the background
+    // scenery - is built from just these five, scaled and tinted
+    // differently per part. Nothing else creates its own geometry.
+    //
+    // 'hullShape' (makeUnitShipHull(), src/Mesh.h) is shaped like a boat:
+    // pinched to a point at the bow, full width at its widest point, a
+    // flat stern, and narrower at the keel than at the deck line.
+    //
+    // 'mountainShape' reuses makeUnitTaperedBox() - the same generator an
+    // earlier version of this file used for the hull - but with a much
+    // more extreme taper and drawn upside down (see drawMountain(),
+    // src/Scenery.h), turning "narrow at the bottom" into "wide base,
+    // narrow peak".
+    Mesh unitCube = makeUnitCube();
+    Mesh unitCylinder = makeCylinder(SceneConfig::CYLINDER_SEGMENTS);
+    Mesh unitSphere = makeSphere(SceneConfig::SPHERE_STACKS, SceneConfig::SPHERE_SLICES);
+    Mesh hullShape = makeUnitShipHull(ShipShape::HULL_BOTTOM_SCALE);
+    Mesh mountainShape = makeUnitTaperedBox(0.12f);
+    if (!unitCube.valid() || !unitCylinder.valid() || !unitSphere.valid()
+        || !hullShape.valid() || !mountainShape.valid()) {
+        std::fprintf(stderr, "Failed to create the reusable meshes.\n");
+        mountainShape.destroy();
+        hullShape.destroy();
+        unitSphere.destroy();
+        unitCylinder.destroy();
+        unitCube.destroy();
         shader.destroy();
         glfwDestroyWindow(window);
         glfwTerminate();
         return 1;
     }
 
-    QuadGpu quad;
-    if (!createQuad(quad)) {
-        std::fprintf(stderr, "Failed to create the indexed quad.\n");
-        destroyQuad(quad);
-        destroyTriangle(triangle);
-        shader.destroy();
-        glfwDestroyWindow(window);
-        glfwTerminate();
-        return 1;
-    }
-
-    CubeGpu cube;
-    if (!createCube(cube)) {
-        std::fprintf(stderr, "Failed to create the cube.\n");
-        destroyCube(cube);
-        destroyQuad(quad);
-        destroyTriangle(triangle);
-        shader.destroy();
-        glfwDestroyWindow(window);
-        glfwTerminate();
-        return 1;
-    }
-
-    std::printf("Phase 13 ready. Drag with the left mouse button to orbit, scroll to zoom. Press W for wireframe, D to toggle depth test, O to compare transform order. Press ESC to close.\n");
+    std::printf(
+        "Ready. Drag with the left mouse button to orbit, scroll to zoom. "
+        "Press W for wireframe. Press 0 for the whole scene, or view one "
+        "object alone: 1 Ship, 2 Cannon, 3 Flag, 4 Crew, 5 Sun, 6 Water, "
+        "7 Barrel, 8 Crate, 9 Cannonball, E Enemy ship. Press ESC to close.\n");
 
     SceneState scene;
+    applyViewPreset(scene, ViewMode::All);
 
-    // Phase 13: give the two mouse callbacks in src/Camera.h a way to reach
-    // this camera. GLFW's callbacks are plain C function pointers - they
-    // cannot capture 'scene' the way a lambda could - so a pointer to the
-    // one camera they need is attached to the window itself, and each
-    // callback reads it back out with glfwGetWindowUserPointer.
-    //
-    // Seeding lastCursorX/Y from the REAL current cursor position, rather
-    // than leaving them at their 0.0 default, stops the very first drag from
-    // jumping by however far the cursor's true starting position happens to
-    // be from the corner of the screen.
+    // Give the two mouse callbacks in src/Camera.h a way to reach this
+    // camera - see the Phase 13 explanation for why this indirection exists.
     glfwSetWindowUserPointer(window, &scene.camera);
     glfwGetCursorPos(window, &scene.camera.lastCursorX, &scene.camera.lastCursorY);
     glfwSetCursorPosCallback(window, handleOrbitCameraCursorMove);
@@ -1099,13 +885,14 @@ int main()
         updateClock(clock);
         processInput(window, scene);
 
-        // Phase 7: read the CURRENT framebuffer size every frame, not just
-        // once at startup, so uProjection keeps a correct aspect ratio if the
-        // window is resized while the program runs.
+        // Read the CURRENT framebuffer size every frame, not just once at
+        // startup, so uProjection keeps a correct aspect ratio if the window
+        // is resized while the program runs.
         glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
 
-        updateScene(scene, clock.now, clock.deltaTime, framebufferWidth, framebufferHeight);
-        renderScene(shader, triangle, quad, cube, scene);
+        updateScene(scene, framebufferWidth, framebufferHeight);
+        updateMouseCoordinateTitle(window, scene, framebufferWidth, framebufferHeight);
+        renderScene(shader, unitCube, unitCylinder, unitSphere, hullShape, mountainShape, scene);
 
         glfwSwapBuffers(window);
         glfwPollEvents();
@@ -1114,9 +901,11 @@ int main()
     }
 
     // OpenGL resources must be deleted while the context still exists.
-    destroyCube(cube);
-    destroyQuad(quad);
-    destroyTriangle(triangle);
+    mountainShape.destroy();
+    hullShape.destroy();
+    unitSphere.destroy();
+    unitCylinder.destroy();
+    unitCube.destroy();
     shader.destroy();
 
     glfwDestroyWindow(window);
