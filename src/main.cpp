@@ -1,4 +1,4 @@
-// Ship Battle Simulator - Phase 13: mouse-driven orbit, and real limits.
+// Ship Battle Simulator - Phase 15: normals as colour.
 //
 // Every frame follows the same clear order:
 //   1. measure time;
@@ -7,11 +7,16 @@
 //   4. render the scene;
 //   5. show the frame and read window events.
 //
-// Phase 12's arrow keys are gone. In their place: click and drag to orbit,
-// scroll to zoom, both handled by two GLFW callbacks living in src/Camera.h.
-// Pitch is now clamped to 89 degrees each way, so the flip Phase 12
-// deliberately left in can never happen again, and radius is clamped too, so
-// scrolling cannot zoom through the target or vanish into the distance.
+// Phase 14 gave every vertex a normal, and nothing read it. This phase reads
+// it: pressing 'N' makes the fragment shader paint each pixel from its normal
+// instead of its colour, using N * 0.5 + 0.5 to turn a -1..+1 direction into
+// a 0..1 colour. Each cube face then shows one flat, predictable colour for
+// the axis it faces.
+//
+// This is a tool, not a feature. A wrong normal is nearly invisible once it
+// is buried inside a lighting equation, so it is worth being able to see every
+// normal in the scene directly BEFORE any light depends on one - which is why
+// the plan puts this key here, eleven phases before the first light.
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -20,18 +25,20 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "Camera.h"
+#include "Mesh.h"
 #include "Shader.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <vector>
 
 namespace AppConfig {
 
 // These values are grouped here so they are easy to find and change during a viva.
 constexpr int WINDOW_WIDTH = 1280;
 constexpr int WINDOW_HEIGHT = 720;
-constexpr const char* WINDOW_TITLE = "Ship Battle Simulator - Phase 13: Mouse Orbit";
+constexpr const char* WINDOW_TITLE = "Ship Battle Simulator - Phase 15: Normals as Colour";
 constexpr const char* VERTEX_SHADER_PATH = "shaders/basic.vert";
 constexpr const char* FRAGMENT_SHADER_PATH = "shaders/basic.frag";
 
@@ -80,19 +87,34 @@ constexpr float FAR_PLANE = 100.0f;
 
 namespace TriangleConfig {
 
-// Each row is: position x/y/z, then colour red/green/blue.
-// These are easy viva values: edit positions to reshape/move the triangle and
-// edit colours to change its three corners.
-constexpr float VERTICES[] = {
-     0.40f,  0.37f, 0.0f,   0.1f, 0.1f, 0.1f,
-    -0.40f,  0.37f, 0.0f,   0.1f, 0.1f, 0.1f,
-     0.00f, -0.73f, 0.0f,   0.1f, 0.1f, 1.0f
+// Phase 14: each row is now one `Vertex` from src/Mesh.h - a position, a
+// normal, and a colour - instead of six loose floats whose meaning depended
+// on counting. The position and colour numbers are exactly the ones Phase 2
+// typed in; only the way they are written down is new.
+//
+// The triangle is flat and lies in the XY plane, so all three of its corners
+// face the same way: straight out of the screen along +Z. No line of shader
+// code reads that normal yet, but the mesh uploads it, so it has to be right
+// now rather than guessed at later.
+//
+// These are still easy viva values: edit positions to reshape/move the
+// triangle and edit colours to change its three corners.
+const glm::vec3 FLAT_NORMAL(0.0f, 0.0f, 1.0f);
+
+const Vertex VERTICES[] = {
+    { {  0.40f,  0.37f, 0.0f }, FLAT_NORMAL, { 0.1f, 0.1f, 0.1f } },
+    { { -0.40f,  0.37f, 0.0f }, FLAT_NORMAL, { 0.1f, 0.1f, 0.1f } },
+    { {  0.00f, -0.73f, 0.0f }, FLAT_NORMAL, { 0.1f, 0.1f, 1.0f } },
 };
 
+// Phase 14: the triangle needs an index list for the first time. `Mesh`
+// always draws with glDrawElements, so even a shape with no shared corners
+// needs one - here simply "corner 0, corner 1, corner 2", which is the same
+// order glDrawArrays walked through on its own until now.
+const unsigned int INDICES[] = { 0, 1, 2 };
+
 constexpr int VERTEX_COUNT = 3;
-constexpr int FLOATS_PER_VERTEX = 6;
-constexpr int POSITION_COMPONENTS = 3;
-constexpr int COLOR_COMPONENTS = 3;
+constexpr int INDEX_COUNT = 3;
 
 } // namespace TriangleConfig
 
@@ -184,17 +206,23 @@ const glm::vec3 FAR_COPY_TINT(3.0f, 0.5f, 0.4f);
 
 namespace QuadConfig {
 
-// Phase 9: 4 UNIQUE corners, one row each: position x/y/z, then colour r/g/b.
+// Phase 9: 4 UNIQUE corners, one row each. Phase 14 turned each row into a
+// `Vertex` - position, normal, colour - with the same numbers as before.
 // A different colour on each corner makes the shared diagonal easy to see,
 // and makes a wrong index (see INDICES below) obvious: the colours would no
 // longer blend the way they are supposed to.
 //   0: top-left (red)  1: top-right (green)
 //   3: bottom-left (yellow)  2: bottom-right (blue)
-constexpr float VERTICES[] = {
-    -0.4f,  0.4f, 0.0f,   1.0f, 0.0f, 0.0f,   // 0: top-left,     red
-     0.4f,  0.4f, 0.0f,   0.5f, 1.0f, 0.0f,   // 1: top-right,    green
-     0.4f, -0.4f, 0.0f,   0.1f, 0.7f, 1.0f,   // 2: bottom-right, blue
-    -0.4f, -0.4f, 0.0f,   1.0f, 1.0f, 0.9f,   // 3: bottom-left,  yellow
+//
+// Like the triangle, the quad is flat in the XY plane, so every corner's
+// normal points the same way: +Z, straight at the camera's starting position.
+const glm::vec3 FLAT_NORMAL(0.0f, 0.0f, 1.0f);
+
+const Vertex VERTICES[] = {
+    { { -0.4f,  0.4f, 0.0f }, FLAT_NORMAL, { 1.0f, 0.0f, 0.0f } },   // 0: top-left,     red
+    { {  0.4f,  0.4f, 0.0f }, FLAT_NORMAL, { 0.5f, 1.0f, 0.0f } },   // 1: top-right,    green
+    { {  0.4f, -0.4f, 0.0f }, FLAT_NORMAL, { 0.1f, 0.7f, 1.0f } },   // 2: bottom-right, blue
+    { { -0.4f, -0.4f, 0.0f }, FLAT_NORMAL, { 1.0f, 1.0f, 0.9f } },   // 3: bottom-left,  yellow
 };
 
 // Two triangles, sharing the diagonal that runs from corner 2 to corner 0.
@@ -210,9 +238,6 @@ constexpr unsigned int INDICES[] = {
 
 constexpr int VERTEX_COUNT = 4;
 constexpr int INDEX_COUNT = 6;
-constexpr int FLOATS_PER_VERTEX = 6;
-constexpr int POSITION_COMPONENTS = 3;
-constexpr int COLOR_COMPONENTS = 3;
 
 // Phase 9: the quad does not move. It sits to one side, at the same distance
 // from the camera as the other two triangles rest at, so it is easy to find
@@ -231,71 +256,28 @@ namespace CubeConfig {
 // waits until Phase 16's reusable, parameterised mesh generators.
 constexpr float HALF_SIZE = 0.5f;
 
-// 24 vertices - 4 for EACH of the 6 faces, not 8 shared corners. A real cube
-// only has 8 corners, but a corner where three faces meet cannot share one
-// vertex between those faces here, because each face needs its OWN flat
-// colour, and a shared vertex can only carry one colour. Paying for that
-// with 24 vertices instead of 8 is a small, deliberate cost.
+// Phase 14: the cube's six face colours, one per face, in the same order
+// makeCube() walks its faces: +Z, -Z, +X, -X, +Y, -Y.
 //
-// Every face lists its 4 corners in the same order the quad already used:
-// a CCW (counter-clockwise) loop AS SEEN FROM OUTSIDE the cube, which is
-// what GL_CULL_FACE needs to keep a face visible instead of discarding it.
-constexpr float VERTICES[] = {
-    // +Z face (front, facing the camera) - blue
-    -HALF_SIZE, -HALF_SIZE,  HALF_SIZE,   0.0f, 0.0f, 1.0f,
-     HALF_SIZE, -HALF_SIZE,  HALF_SIZE,   0.0f, 0.0f, 1.0f,
-     HALF_SIZE,  HALF_SIZE,  HALF_SIZE,   0.0f, 0.0f, 1.0f,
-    -HALF_SIZE,  HALF_SIZE,  HALF_SIZE,   0.0f, 0.0f, 1.0f,
-
-    // -Z face (back) - yellow
-     HALF_SIZE, -HALF_SIZE, -HALF_SIZE,   1.0f, 1.0f, 0.0f,
-    -HALF_SIZE, -HALF_SIZE, -HALF_SIZE,   1.0f, 1.0f, 0.0f,
-    -HALF_SIZE,  HALF_SIZE, -HALF_SIZE,   1.0f, 1.0f, 0.0f,
-     HALF_SIZE,  HALF_SIZE, -HALF_SIZE,   1.0f, 1.0f, 0.0f,
-
-    // +X face (right) - red
-     HALF_SIZE, -HALF_SIZE,  HALF_SIZE,   1.0f, 0.0f, 0.0f,
-     HALF_SIZE, -HALF_SIZE, -HALF_SIZE,   1.0f, 0.0f, 0.0f,
-     HALF_SIZE,  HALF_SIZE, -HALF_SIZE,   1.0f, 0.0f, 0.0f,
-     HALF_SIZE,  HALF_SIZE,  HALF_SIZE,   1.0f, 0.0f, 0.0f,
-
-    // -X face (left) - cyan
-    -HALF_SIZE, -HALF_SIZE, -HALF_SIZE,   0.0f, 1.0f, 1.0f,
-    -HALF_SIZE, -HALF_SIZE,  HALF_SIZE,   0.0f, 1.0f, 1.0f,
-    -HALF_SIZE,  HALF_SIZE,  HALF_SIZE,   0.0f, 1.0f, 1.0f,
-    -HALF_SIZE,  HALF_SIZE, -HALF_SIZE,   0.0f, 1.0f, 1.0f,
-
-    // +Y face (top) - green
-    -HALF_SIZE,  HALF_SIZE,  HALF_SIZE,   0.0f, 1.0f, 0.0f,
-     HALF_SIZE,  HALF_SIZE,  HALF_SIZE,   0.0f, 1.0f, 0.0f,
-     HALF_SIZE,  HALF_SIZE, -HALF_SIZE,   0.0f, 1.0f, 0.0f,
-    -HALF_SIZE,  HALF_SIZE, -HALF_SIZE,   0.0f, 1.0f, 0.0f,
-
-    // -Y face (bottom) - magenta
-    -HALF_SIZE, -HALF_SIZE, -HALF_SIZE,   1.0f, 0.0f, 1.0f,
-     HALF_SIZE, -HALF_SIZE, -HALF_SIZE,   1.0f, 0.0f, 1.0f,
-     HALF_SIZE, -HALF_SIZE,  HALF_SIZE,   1.0f, 0.0f, 1.0f,
-    -HALF_SIZE, -HALF_SIZE,  HALF_SIZE,   1.0f, 0.0f, 1.0f,
+// Phase 10 wrote out all 24 vertices and all 36 indices by hand, repeating
+// each face's colour on four rows. Those two arrays are gone: makeCube() in
+// src/Mesh.h generates exactly the same numbers from a loop. The colours stay
+// here, in main.cpp, because they are a choice about how the cube LOOKS,
+// while the generator's job is only its SHAPE. That split is the same one
+// materials formalise in Phase 29.
+//
+// Each face still gets its own 4 vertices rather than sharing the cube's 8
+// real corners, for the reason Phase 10 gave: a vertex carries one colour and
+// one normal, and a cube corner belongs to three faces that need different
+// values for both.
+const glm::vec3 FACE_COLORS[6] = {
+    { 0.0f, 0.0f, 1.0f },   // +Z front  - blue
+    { 1.0f, 1.0f, 0.0f },   // -Z back   - yellow
+    { 1.0f, 0.0f, 0.0f },   // +X right  - red
+    { 0.0f, 1.0f, 1.0f },   // -X left   - cyan
+    { 0.0f, 1.0f, 0.0f },   // +Y top    - green
+    { 1.0f, 0.0f, 1.0f },   // -Y bottom - magenta
 };
-
-// 36 indices - 6 per face, following the exact {corner,corner,corner,
-// corner,corner,corner} pattern QuadConfig::INDICES already used, once for
-// each face's own 4 vertices. Face f's vertices start at row f*4, so its
-// two triangles are (f*4+0, f*4+1, f*4+2) and (f*4+2, f*4+3, f*4+0).
-constexpr unsigned int INDICES[] = {
-     0,  1,  2,   2,  3,  0,    // +Z face
-     4,  5,  6,   6,  7,  4,    // -Z face
-     8,  9, 10,  10, 11,  8,    // +X face
-    12, 13, 14,  14, 15, 12,    // -X face
-    16, 17, 18,  18, 19, 16,    // +Y face
-    20, 21, 22,  22, 23, 20,    // -Y face
-};
-
-constexpr int VERTEX_COUNT = 24;
-constexpr int INDEX_COUNT = 36;
-constexpr int FLOATS_PER_VERTEX = 6;
-constexpr int POSITION_COMPONENTS = 3;
-constexpr int COLOR_COMPONENTS = 3;
 
 // Phase 10: where the cube sits, away from the triangles and mirrored across
 // the quad so all three objects are easy to tell apart on screen.
@@ -328,33 +310,11 @@ struct FrameStats {
     int renderedFrames = 0;
 };
 
-// GPU handles for this phase's temporary triangle.
-// VAO remembers the vertex layout; VBO stores the vertex numbers.
-struct TriangleGpu {
-    GLuint vao = 0;
-    GLuint vbo = 0;
-};
-
-// Phase 9: the quad's GPU handles. It needs everything the triangle needs,
-// plus an EBO (Element Buffer Object): a third buffer holding QuadConfig's 6
-// indices, so the driver knows which of the 4 uploaded vertices to use for
-// each triangle corner.
-struct QuadGpu {
-    GLuint vao = 0;
-    GLuint vbo = 0;
-    GLuint ebo = 0;
-};
-
-// Phase 10: the cube's GPU handles. Same shape as QuadGpu - a VAO, a VBO, and
-// an EBO - because a cube is drawn exactly the same way a quad is, just with
-// more vertices and more indices. A shared `Mesh` type that both of these
-// could use instead of two near-identical structs arrives in Phase 14, once
-// there is enough repetition to justify it.
-struct CubeGpu {
-    GLuint vao = 0;
-    GLuint vbo = 0;
-    GLuint ebo = 0;
-};
+// Phase 14: `TriangleGpu`, `QuadGpu`, and `CubeGpu` used to sit here - three
+// structs of raw GLuint handles, the second and third identical to each
+// other. The `Mesh` class in src/Mesh.h replaced all three. It holds the same
+// handles, but it also knows how many indices to draw and deletes its own
+// buffers, which a bare struct of handles could never do on its own.
 
 // Data that changes as the scene changes. updateScene() writes it and
 // renderScene() reads it, so neither function needs to know about the other.
@@ -417,6 +377,13 @@ struct SceneState {
     // only once, on the frame it is first pressed, instead of roughly 120
     // times a second for as long as it is held.
     bool orderKeyWasDown = false;
+
+    // Phase 15: toggled by the 'N' key. False is the normal picture, coloured
+    // from each vertex's own colour. True makes the fragment shader ignore
+    // colour and tint completely and paint each pixel from the NORMAL
+    // instead, so every normal in the scene can be checked by eye.
+    bool debugNormalsEnabled = false;
+    bool debugNormalsKeyWasDown = false;
 };
 
 static void glfwErrorCallback(int errorCode, const char* description)
@@ -469,6 +436,19 @@ static void processInput(GLFWwindow* window, SceneState& scene)
                 : "OFF, culling ON (the normal solid view)");
     }
     scene.wireframeKeyWasDown = wireframeKeyIsDown;
+
+    // Phase 15: 'N' switches the normals debug view on and off. Same
+    // edge-detection reason as every other toggle in this function.
+    const bool debugNormalsKeyIsDown = glfwGetKey(window, GLFW_KEY_N) == GLFW_PRESS;
+    if (debugNormalsKeyIsDown && !scene.debugNormalsKeyWasDown) {
+        scene.debugNormalsEnabled = !scene.debugNormalsEnabled;
+        std::printf(
+            "[normals] debug view %s\n",
+            scene.debugNormalsEnabled
+                ? "ON  (each pixel is painted from its normal: N * 0.5 + 0.5)"
+                : "OFF (back to the vertex colours, filtered by uTint)");
+    }
+    scene.debugNormalsKeyWasDown = debugNormalsKeyIsDown;
 
     // Phase 6: 'O' compares the correct T * R * S order against the same
     // three matrices multiplied back to front. glfwGetKey reports the key as
@@ -620,231 +600,55 @@ static void updateScene(
     static_cast<void>(deltaTime);
 }
 
-static bool createTriangle(TriangleGpu& triangle)
+// Phase 14: one function replaces createTriangle/destroyTriangle,
+// createQuad/destroyQuad, and createCube/destroyCube - six functions and
+// about 210 lines of near-identical glGen/glBind/glBufferData/
+// glVertexAttribPointer calls. All of that work now happens once, inside
+// Mesh::upload(), and each Mesh frees itself in Mesh::destroy(), so the
+// three destroy functions have no work left to do at all.
+//
+// The triangle and the quad still carry their vertices written out by hand,
+// exactly as Phases 2 and 9 wrote them. Only the cube is GENERATED, because
+// the plan gives it makeCube() in this phase; makeQuad() and the rest of the
+// generators arrive in Phases 17-22.
+static bool createMeshes(Mesh& triangleMesh, Mesh& quadMesh, Mesh& cubeMesh)
 {
-    glGenVertexArrays(1, &triangle.vao);
-    glGenBuffers(1, &triangle.vbo);
-
-    glBindVertexArray(triangle.vao);
-    glBindBuffer(GL_ARRAY_BUFFER, triangle.vbo);
-    glBufferData(
-        GL_ARRAY_BUFFER,
-        sizeof(TriangleConfig::VERTICES),
+    // Mesh::upload takes std::vector, and these config arrays are fixed-size
+    // C arrays, so each one is copied into a vector by naming its first
+    // element and one-past-its-last. The copy happens once, at startup.
+    const std::vector<Vertex> triangleVertices(
         TriangleConfig::VERTICES,
-        GL_STATIC_DRAW);
+        TriangleConfig::VERTICES + TriangleConfig::VERTEX_COUNT);
+    const std::vector<unsigned int> triangleIndices(
+        TriangleConfig::INDICES,
+        TriangleConfig::INDICES + TriangleConfig::INDEX_COUNT);
 
-    const GLsizei stride = static_cast<GLsizei>(
-        TriangleConfig::FLOATS_PER_VERTEX * sizeof(float));
-
-    // Attribute 0 reads the first three floats: x, y, z.
-    glVertexAttribPointer(
-        0,
-        TriangleConfig::POSITION_COMPONENTS,
-        GL_FLOAT,
-        GL_FALSE,
-        stride,
-        nullptr);
-    glEnableVertexAttribArray(0);
-
-    // Attribute 1 starts after the three position floats and reads r, g, b.
-    glVertexAttribPointer(
-        1,
-        TriangleConfig::COLOR_COMPONENTS,
-        GL_FLOAT,
-        GL_FALSE,
-        stride,
-        reinterpret_cast<const void*>(
-            TriangleConfig::POSITION_COMPONENTS * sizeof(float)));
-    glEnableVertexAttribArray(1);
-
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glBindVertexArray(0);
-
-    const GLenum error = glGetError();
-    if (error != GL_NO_ERROR) {
-        std::fprintf(stderr, "[triangle] OpenGL setup error: 0x%04X\n", error);
+    if (!triangleMesh.upload("triangle", triangleVertices, triangleIndices))
         return false;
-    }
 
-    return triangle.vao != 0 && triangle.vbo != 0;
-}
-
-static void destroyTriangle(TriangleGpu& triangle)
-{
-    if (triangle.vbo != 0)
-        glDeleteBuffers(1, &triangle.vbo);
-
-    if (triangle.vao != 0)
-        glDeleteVertexArrays(1, &triangle.vao);
-
-    triangle.vbo = 0;
-    triangle.vao = 0;
-}
-
-static bool createQuad(QuadGpu& quad)
-{
-    glGenVertexArrays(1, &quad.vao);
-    glGenBuffers(1, &quad.vbo);
-    glGenBuffers(1, &quad.ebo);
-
-    glBindVertexArray(quad.vao);
-
-    // The vertex data: this half is identical in kind to createTriangle().
-    glBindBuffer(GL_ARRAY_BUFFER, quad.vbo);
-    glBufferData(
-        GL_ARRAY_BUFFER,
-        sizeof(QuadConfig::VERTICES),
+    const std::vector<Vertex> quadVertices(
         QuadConfig::VERTICES,
-        GL_STATIC_DRAW);
-
-    // The index data: new in this phase. GL_ELEMENT_ARRAY_BUFFER is a
-    // different KIND of buffer to GL_ARRAY_BUFFER - it does not hold
-    // per-vertex data at all, it holds a list of which vertex to use next.
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, quad.ebo);
-    glBufferData(
-        GL_ELEMENT_ARRAY_BUFFER,
-        sizeof(QuadConfig::INDICES),
+        QuadConfig::VERTICES + QuadConfig::VERTEX_COUNT);
+    const std::vector<unsigned int> quadIndices(
         QuadConfig::INDICES,
-        GL_STATIC_DRAW);
+        QuadConfig::INDICES + QuadConfig::INDEX_COUNT);
 
-    const GLsizei stride = static_cast<GLsizei>(
-        QuadConfig::FLOATS_PER_VERTEX * sizeof(float));
-
-    glVertexAttribPointer(
-        0,
-        QuadConfig::POSITION_COMPONENTS,
-        GL_FLOAT,
-        GL_FALSE,
-        stride,
-        nullptr);
-    glEnableVertexAttribArray(0);
-
-    glVertexAttribPointer(
-        1,
-        QuadConfig::COLOR_COMPONENTS,
-        GL_FLOAT,
-        GL_FALSE,
-        stride,
-        reinterpret_cast<const void*>(
-            QuadConfig::POSITION_COMPONENTS * sizeof(float)));
-    glEnableVertexAttribArray(1);
-
-    // Unbind the VBO - safe any time. The EBO is NOT unbound here: a VAO
-    // remembers which GL_ELEMENT_ARRAY_BUFFER was bound while it was bound,
-    // and unbinding the EBO now would erase that memory, leaving this VAO
-    // with no index buffer at all. Unbinding the VAO first, below, protects
-    // the EBO binding it just recorded.
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glBindVertexArray(0);
-
-    const GLenum error = glGetError();
-    if (error != GL_NO_ERROR) {
-        std::fprintf(stderr, "[quad] OpenGL setup error: 0x%04X\n", error);
+    if (!quadMesh.upload("quad", quadVertices, quadIndices))
         return false;
-    }
 
-    return quad.vao != 0 && quad.vbo != 0 && quad.ebo != 0;
-}
-
-static void destroyQuad(QuadGpu& quad)
-{
-    if (quad.ebo != 0)
-        glDeleteBuffers(1, &quad.ebo);
-
-    if (quad.vbo != 0)
-        glDeleteBuffers(1, &quad.vbo);
-
-    if (quad.vao != 0)
-        glDeleteVertexArrays(1, &quad.vao);
-
-    quad.ebo = 0;
-    quad.vbo = 0;
-    quad.vao = 0;
-}
-
-// Line for line the same recipe as createQuad(): more vertices and indices,
-// but the exact same VAO/VBO/EBO steps, in the exact same order.
-static bool createCube(CubeGpu& cube)
-{
-    glGenVertexArrays(1, &cube.vao);
-    glGenBuffers(1, &cube.vbo);
-    glGenBuffers(1, &cube.ebo);
-
-    glBindVertexArray(cube.vao);
-
-    glBindBuffer(GL_ARRAY_BUFFER, cube.vbo);
-    glBufferData(
-        GL_ARRAY_BUFFER,
-        sizeof(CubeConfig::VERTICES),
-        CubeConfig::VERTICES,
-        GL_STATIC_DRAW);
-
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, cube.ebo);
-    glBufferData(
-        GL_ELEMENT_ARRAY_BUFFER,
-        sizeof(CubeConfig::INDICES),
-        CubeConfig::INDICES,
-        GL_STATIC_DRAW);
-
-    const GLsizei stride = static_cast<GLsizei>(
-        CubeConfig::FLOATS_PER_VERTEX * sizeof(float));
-
-    glVertexAttribPointer(
-        0,
-        CubeConfig::POSITION_COMPONENTS,
-        GL_FLOAT,
-        GL_FALSE,
-        stride,
-        nullptr);
-    glEnableVertexAttribArray(0);
-
-    glVertexAttribPointer(
-        1,
-        CubeConfig::COLOR_COMPONENTS,
-        GL_FLOAT,
-        GL_FALSE,
-        stride,
-        reinterpret_cast<const void*>(
-            CubeConfig::POSITION_COMPONENTS * sizeof(float)));
-    glEnableVertexAttribArray(1);
-
-    // Same rule as createQuad(): unbind the VBO, but not the EBO, and unbind
-    // the VAO last so the EBO binding it recorded survives.
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glBindVertexArray(0);
-
-    const GLenum error = glGetError();
-    if (error != GL_NO_ERROR) {
-        std::fprintf(stderr, "[cube] OpenGL setup error: 0x%04X\n", error);
-        return false;
-    }
-
-    return cube.vao != 0 && cube.vbo != 0 && cube.ebo != 0;
-}
-
-static void destroyCube(CubeGpu& cube)
-{
-    if (cube.ebo != 0)
-        glDeleteBuffers(1, &cube.ebo);
-
-    if (cube.vbo != 0)
-        glDeleteBuffers(1, &cube.vbo);
-
-    if (cube.vao != 0)
-        glDeleteVertexArrays(1, &cube.vao);
-
-    cube.ebo = 0;
-    cube.vbo = 0;
-    cube.vao = 0;
+    // The cube's 24 vertices and 36 indices are built by a loop in
+    // src/Mesh.h instead of typed out here. makeCube() produces the same
+    // numbers, in the same order, that Phase 10 wrote by hand.
+    return makeCube(cubeMesh, CubeConfig::HALF_SIZE, CubeConfig::FACE_COLORS);
 }
 
 // The shader is no longer passed as const: setting a uniform changes the
 // shader program, so this function can no longer promise to leave it alone.
 static void renderScene(
     ShaderProgram& shader,
-    const TriangleGpu& triangle,
-    const QuadGpu& quad,
-    const CubeGpu& cube,
+    const Mesh& triangleMesh,
+    const Mesh& quadMesh,
+    const Mesh& cubeMesh,
     const SceneState& scene)
 {
     glClearColor(
@@ -865,6 +669,12 @@ static void renderScene(
     // frame, so they are uploaded once, before either draw call.
     shader.setMat4("uView", scene.view);
     shader.setMat4("uProjection", scene.projection);
+
+    // Phase 15: the debug view applies to the whole scene, not to one object,
+    // so like the camera matrices it is uploaded once per frame rather than
+    // once per draw. setInt() is used here for the first time; it has existed,
+    // unused, since Phase 3.
+    shader.setInt("uDebugNormals", scene.debugNormalsEnabled ? 1 : 0);
 
     // Phase 8: this ONE line decides whether depth is honoured at all. It is
     // set fresh every frame from the 'D' key's state, rather than relying on
@@ -889,53 +699,44 @@ static void renderScene(
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     }
 
-    glBindVertexArray(triangle.vao);
+    // Phase 14: every draw below now reads the same three lines - set the
+    // tint, set the model matrix, tell the mesh to draw itself. Binding the
+    // right VAO, knowing whether to call glDrawArrays or glDrawElements, and
+    // knowing how many indices there are have all moved inside Mesh::draw().
+    // This function is left saying only what is different about each object.
 
-    // Draw 1: the near copy, drawn FIRST.
+    // Draw 1: the near copy of the triangle, drawn FIRST.
     shader.setVec3("uTint", AppConfig::TINT);
     shader.setMat4("uModel", scene.triangleModel);
-    glDrawArrays(GL_TRIANGLES, 0, TriangleConfig::VERTEX_COUNT);
+    triangleMesh.draw();
 
     // Draw 2: the SAME mesh again, at DepthTestConfig::FAR_COPY_Z_OFFSET
     // farther away, drawn SECOND. Nothing here is duplicated except the draw
-    // call itself: same VAO, same vertex data, just a different uModel and
+    // call itself: same mesh, same vertex data, just a different uModel and
     // uTint. Drawing the farther copy LAST is deliberate - with depth testing
     // off, its "wrong" pixels are the ones that end up on screen, which is
     // exactly what makes GL_DEPTH_TEST worth having.
     shader.setVec3("uTint", DepthTestConfig::FAR_COPY_TINT);
     shader.setMat4("uModel", scene.farCopyModel);
-    glDrawArrays(GL_TRIANGLES, 0, TriangleConfig::VERTEX_COUNT);
+    triangleMesh.draw();
 
-    // Draw 3: the indexed quad. A different VAO must be bound first, because
-    // the two triangles' VAO has no knowledge of the quad's vertices or its
-    // EBO - each VAO only remembers the buffers it was bound to at the time.
+    // Draw 3: the quad.
     //
     // uTint is (1, 1, 1) here on purpose: this quad's four corners already
     // carry their own distinct colours (Phase 2's idea), so the tint should
     // leave them alone rather than filtering them the way Phase 3 does for
     // the triangle.
-    glBindVertexArray(quad.vao);
     shader.setVec3("uTint", glm::vec3(1.0f, 1.0f, 1.0f));
     shader.setMat4("uModel", scene.quadModel);
+    quadMesh.draw();
 
-    // glDrawElements reads QuadConfig::INDICES from the EBO already bound
-    // inside quad.vao, rather than walking through the VBO in order the way
-    // glDrawArrays does. The last argument is nullptr because the indices
-    // live in a real GPU buffer, at offset 0 - it is not a CPU array pointer.
-    glDrawElements(GL_TRIANGLES, QuadConfig::INDEX_COUNT, GL_UNSIGNED_INT, nullptr);
-
-    // Draw 4: the cube. A third VAO, for the same reason the quad needed a
-    // second one - the triangles' VAO and the quad's VAO each only know
-    // about their own buffers.
+    // Draw 4: the cube.
     //
     // uTint stays (1, 1, 1): each of the cube's 24 vertices already carries
     // its own face colour, so nothing should filter it.
-    glBindVertexArray(cube.vao);
     shader.setVec3("uTint", glm::vec3(1.0f, 1.0f, 1.0f));
     shader.setMat4("uModel", scene.cubeModel);
-    glDrawElements(GL_TRIANGLES, CubeConfig::INDEX_COUNT, GL_UNSIGNED_INT, nullptr);
-
-    glBindVertexArray(0);
+    cubeMesh.draw();
 }
 
 static void reportFrame(FrameStats& stats, const FrameClock& clock)
@@ -1037,40 +838,26 @@ int main()
         return 1;
     }
 
-    TriangleGpu triangle;
-    if (!createTriangle(triangle)) {
-        std::fprintf(stderr, "Failed to create the shader-test triangle.\n");
-        destroyTriangle(triangle);
+    // Phase 14: three Mesh objects replace three structs of raw handles and
+    // three create/destroy pairs. Each one owns its own VAO, VBO, and EBO.
+    // They are declared here, before the loop, so they live for as long as
+    // the window does.
+    Mesh triangleMesh;
+    Mesh quadMesh;
+    Mesh cubeMesh;
+
+    if (!createMeshes(triangleMesh, quadMesh, cubeMesh)) {
+        std::fprintf(stderr, "Failed to create the scene meshes.\n");
+        cubeMesh.destroy();
+        quadMesh.destroy();
+        triangleMesh.destroy();
         shader.destroy();
         glfwDestroyWindow(window);
         glfwTerminate();
         return 1;
     }
 
-    QuadGpu quad;
-    if (!createQuad(quad)) {
-        std::fprintf(stderr, "Failed to create the indexed quad.\n");
-        destroyQuad(quad);
-        destroyTriangle(triangle);
-        shader.destroy();
-        glfwDestroyWindow(window);
-        glfwTerminate();
-        return 1;
-    }
-
-    CubeGpu cube;
-    if (!createCube(cube)) {
-        std::fprintf(stderr, "Failed to create the cube.\n");
-        destroyCube(cube);
-        destroyQuad(quad);
-        destroyTriangle(triangle);
-        shader.destroy();
-        glfwDestroyWindow(window);
-        glfwTerminate();
-        return 1;
-    }
-
-    std::printf("Phase 13 ready. Drag with the left mouse button to orbit, scroll to zoom. Press W for wireframe, D to toggle depth test, O to compare transform order. Press ESC to close.\n");
+    std::printf("Phase 15 ready. Drag with the left mouse button to orbit, scroll to zoom. Press N for the normals debug view, W for wireframe, D to toggle depth test, O to compare transform order. Press ESC to close.\n");
 
     SceneState scene;
 
@@ -1105,7 +892,7 @@ int main()
         glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
 
         updateScene(scene, clock.now, clock.deltaTime, framebufferWidth, framebufferHeight);
-        renderScene(shader, triangle, quad, cube, scene);
+        renderScene(shader, triangleMesh, quadMesh, cubeMesh, scene);
 
         glfwSwapBuffers(window);
         glfwPollEvents();
@@ -1114,9 +901,17 @@ int main()
     }
 
     // OpenGL resources must be deleted while the context still exists.
-    destroyCube(cube);
-    destroyQuad(quad);
-    destroyTriangle(triangle);
+    //
+    // Phase 14: each Mesh also frees itself in its destructor, but a Mesh
+    // declared in main() is destroyed AFTER glfwTerminate() has already
+    // destroyed the context, and deleting a GPU object with no context is
+    // not valid. Calling destroy() here, explicitly, deletes the buffers at
+    // the right moment and leaves every handle at 0, so the later destructor
+    // finds nothing to do. This is the same arrangement ShaderProgram has
+    // used since Phase 2.
+    cubeMesh.destroy();
+    quadMesh.destroy();
+    triangleMesh.destroy();
     shader.destroy();
 
     glfwDestroyWindow(window);

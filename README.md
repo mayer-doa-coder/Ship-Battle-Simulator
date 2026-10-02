@@ -2,7 +2,7 @@
 
 This is the step-by-step teaching version of `Broadside`. It will eventually demonstrate the same naval battle, but every phase must stay small enough to explain, modify, and demonstrate independently.
 
-## Current progress: Phase 13
+## Current progress: Phase 15
 
 The repository currently contains only the OpenGL foundation:
 
@@ -24,9 +24,11 @@ The repository currently contains only the OpenGL foundation:
 - a small static quad built from 4 vertices and 6 indices with an EBO, proving that a shared corner can be uploaded once and reused, instead of being typed out twice;
 - the project's first real 3D object: a solid, spinning cube built from 24 vertices and 36 indices, one flat colour per face, correctly wound on all six sides;
 - a `W` key that shows every triangle's edges and switches face culling off, so a face a winding mistake would normally hide silently can be proven to still exist;
-- `src/Camera.h`: an orbit camera holding a distance and two angles instead of a fixed position, now driven by left-drag to orbit and the scroll wheel to zoom, with pitch clamped to 89 degrees and radius clamped to a sensible range.
+- `src/Camera.h`: an orbit camera holding a distance and two angles instead of a fixed position, now driven by left-drag to orbit and the scroll wheel to zoom, with pitch clamped to 89 degrees and radius clamped to a sensible range;
+- `src/Mesh.h`: one `Vertex` layout and one `Mesh` type that owns its own VAO, VBO, and EBO and draws itself, replacing three near-identical hand-written copies of that code, plus `makeCube()`, the first generator - the cube's 24 vertices and 36 indices are now produced by a loop rather than typed out, and produce exactly the same numbers;
+- an `N` key that paints every pixel from its surface normal instead of its colour, so a normal stops being an invisible number and becomes one flat, predictable colour per face that can be checked against a prediction before any lighting exists to hide a mistake.
 
-There are deliberately no reusable mesh generators, lighting, ships, cannons, people, or environment modes yet. The transformations are a translation, a rotation, a scale, and a camera the mouse can actually move. This is the first phase to draw more than one object, the first to use indexed drawing, the first genuinely 3D solid, the first to explain winding order and face culling directly, and the first to use real GLFW input callbacks instead of polling.
+There is deliberately no lighting, and there are no ships, cannons, people, or environment modes yet. The cube is so far the only generated shape; the quad, grid, cylinder, and sphere generators arrive in Phases 17 to 22. The transformations are a translation, a rotation, a scale, and a camera the mouse can actually move. This is the first phase to draw more than one object, the first to use indexed drawing, the first genuinely 3D solid, the first to explain winding order and face culling directly, and the first to use real GLFW input callbacks instead of polling.
 
 ## Build on Windows
 
@@ -70,9 +72,8 @@ is a single concept with a single visual checkpoint.
 
 | Stage | Phases | Outcome |
 |---|---|---|
-| Done | 0-13 | Window, render loop, shader loader, test triangle, uniforms, the model matrix (translate, rotate, scale, and the T * R * S order), a real camera with view and projection matrices, depth testing proved with two overlapping draws, indexed drawing with an EBO, the first cube, winding order and culling explained with a wireframe key, a mouse-driven orbit camera with real limits |
-| B | 14-25 | Reusable cube/quad/grid/cylinder/sphere meshes, smooth normals, runtime tessellation |
-| B | 14-25 | Reusable cube/quad/grid/cylinder/sphere meshes, smooth normals, runtime tessellation |
+| Done | 0-15 | Window, render loop, shader loader, test triangle, uniforms, the model matrix (translate, rotate, scale, and the T * R * S order), a real camera with view and projection matrices, depth testing proved with two overlapping draws, indexed drawing with an EBO, the first cube, winding order and culling explained with a wireframe key, a mouse-driven orbit camera with real limits, one reusable `Mesh` type, and the normals debug view |
+| B | 16-25 | The unit-mesh rule, reusable quad/grid/cylinder/sphere meshes, smooth normals, runtime tessellation |
 | C | 26-33 | Ambient, diffuse, specular, materials, second light, Flat/Gouraud/Phong |
 | D | 34-37 | One static hierarchical ship and the hierarchy proof |
 | E | 38-39 | Keyboard-controlled player ship |

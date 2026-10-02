@@ -1,10 +1,10 @@
 # AGENT.md - Ship Battle Simulator
 
-This repository is the incremental teaching build. The current source of truth is [README.md](README.md), the phase plan is [docs/PHASE_PLAN.md](docs/PHASE_PLAN.md), and the current completed checkpoint is documented in [docs/PHASE_13_EXPLANATION.md](docs/PHASE_13_EXPLANATION.md).
+This repository is the incremental teaching build. The current source of truth is [README.md](README.md), the phase plan is [docs/PHASE_PLAN.md](docs/PHASE_PLAN.md), and the current completed checkpoint is documented in [docs/PHASE_15_EXPLANATION.md](docs/PHASE_15_EXPLANATION.md).
 
 ## Current phase boundary
 
-Phase 13 is the latest implemented phase. The next phase is Phase 14 in [docs/PHASE_PLAN.md](docs/PHASE_PLAN.md): `src/Mesh.h`, a `Vertex` struct and a `Mesh` type that owns its own VAO/VBO/EBO and draws itself, and nothing else. This is a milestone phase (marked `*` in the plan). Do not add lighting, ships, or anything past reusable meshes unless the student explicitly asks to begin the phase that owns it.
+Phase 15 is the latest implemented phase. The next phase is Phase 16 in [docs/PHASE_PLAN.md](docs/PHASE_PLAN.md): the unit-mesh rule and `drawMesh(mesh, model)` - scale applied in the model matrix and never baked into vertex data - demonstrated by three differently sized cubes drawn from one mesh and one VAO. This is a milestone phase (marked `*` in the plan). Nothing else. Do not add lighting, materials, further mesh generators, ships, or anything past that unless the student explicitly asks to begin the phase that owns it.
 
 ## Permanent project requirements
 
@@ -31,6 +31,6 @@ The finished project will contain:
 
 These requirements are future phases, not permission to implement them all at once.
 
-## Phase 13 checkpoint
+## Phase 15 checkpoint
 
-Phase 13 is complete only when the project builds in Debug and Release with no compiler warnings, all shaders link with no missing-uniform warning, the default view with no mouse input looks identical to Phase 12's, left-drag visibly and smoothly orbits the camera, scrolling visibly zooms in and out and holds at fixed limits at each extreme, dragging far enough in pitch never flips the view, the earlier triangles, quad, cube, and the `D`, `W`, and `O` keys still behave exactly as before from any camera position, and the window still reports frame timing and closes normally. `src/Camera.h` holds the camera; nothing in it is a reusable project mesh.
+Phase 15 is complete only when the project builds in Debug and Release with no compiler warnings, all shaders link with no missing-uniform warning for `uDebugNormals`, the picture with `N` not pressed is exactly Phase 14's, pressing `N` paints every pixel from its normal as `N * 0.5 + 0.5` and pressing it again returns, holding `N` toggles exactly once per press, each cube face shows one flat colour that stays steady as the cube turns, the `+X` face's colour can be predicted before the key is pressed, the `D`, `W`, and `O` keys and the mouse orbit and zoom all still behave exactly as before, and the window still reports frame timing and closes normally. The normal is shown untransformed and un-normalized on purpose: the normal matrix is Phase 26 and `normalize()` belongs with the curved surfaces of Phases 20-22.

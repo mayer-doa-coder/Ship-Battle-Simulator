@@ -1,10 +1,18 @@
 #version 330 core
 
-// Attribute 0: the test vertex position, measured from the triangle's own centre.
+// Attribute 0: this vertex's position, measured from its mesh's own centre.
 layout (location = 0) in vec3 aPosition;
 
-// Attribute 1: the red, green, and blue colour of this vertex.
-layout (location = 1) in vec3 aColor;
+// Phase 14: attribute 1 is the NORMAL - which way the surface faces at this
+// vertex. Phase 15 is the first phase to actually read it: it is passed
+// straight through to the fragment shader, which can paint it as a colour so
+// every normal in the scene can be checked by eye.
+layout (location = 1) in vec3 aNormal;
+
+// Phase 14: the colour moved from attribute 1 to attribute 2 to make room for
+// the normal. `Mesh` sets up all three attributes from the one `Vertex`
+// struct, so these numbers and that struct's field order must agree.
+layout (location = 2) in vec3 aColor;
 
 // Phase 4: the model matrix. It is a uniform (Phase 3), so all three vertices
 // receive the SAME matrix and the triangle moves as one rigid piece.
@@ -28,6 +36,14 @@ uniform mat4 uProjection;
 // Sent to the fragment shader. OpenGL smoothly blends this value between vertices.
 out vec3 vColor;
 
+// Phase 15: the normal, handed on unchanged so the fragment shader can paint
+// it. It is deliberately still in the mesh's OWN space here - no matrix is
+// applied to it - because what this phase needs to verify is the number the
+// generator stored, not where that surface has been moved to. Phase 26 gives
+// it the normal matrix, which is what makes a non-uniformly scaled object
+// show its normals correctly.
+out vec3 vNormal;
+
 void main()
 {
     // A position must have four components before OpenGL can use it.
@@ -42,4 +58,10 @@ void main()
     //                      automatically after this shader runs.
     gl_Position = uProjection * uView * uModel * vec4(aPosition, 1.0);
     vColor = aColor;
+
+    // Phase 15: passed on as it is. Note there is no vec4 and no w component
+    // here, because nothing is being multiplied by a matrix yet. When Phase 26
+    // does transform it, the rule from Phase 4 applies: a normal is a
+    // DIRECTION, so it would use w = 0, never w = 1.
+    vNormal = aNormal;
 }
