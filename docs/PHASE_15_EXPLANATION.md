@@ -28,7 +28,8 @@ exactly the path it took before.
 ### 2. With the debug view ON, every pixel is one of the predicted colours
 
 The same frame, with the debug view forced on, contains **exactly 4 distinct
-colours in the whole 1280 x 720 image**:
+colours in the whole 1280 x 720 image** (captured on the Intel GPU - see the
+note under the colour table about 127 versus 128):
 
 | Colour found | Pixels | What it is |
 |---|---:|---|
@@ -73,6 +74,11 @@ Across all 14 frames the **complete** set of colours produced was:
 total distinct colours observed : 7
 colours outside the predicted set: 0
 ```
+
+(These `128`s are the Intel GPU's rounding of `127.5`. Re-running the very same
+executable on this machine's NVIDIA GPU gives `127` in every one of those
+places instead - see the note under the colour table. The set of colours, and
+the fact that nothing outside it is ever produced, is identical either way.)
 
 All six face colours appeared, every one matched its prediction exactly, and
 **no other colour was ever produced**. Every pixel the debug view draws is one
@@ -134,8 +140,11 @@ Every direction now lands somewhere different and visible. A useful thing to
 remember: **`0.5` grey means "this axis contributes nothing"**, so a mid-grey
 channel is the normal saying "I do not point along this axis at all".
 
-In 8-bit colour, `0.5` comes out as **128**, which is why so many of the
-numbers below are 128.
+In 8-bit colour, `0.5` becomes `0.5 x 255 = 127.5`, which is exactly halfway
+between two whole numbers. Which way it is rounded is **up to the graphics
+driver**, so the mid-grey channel reads as either **127 or 128** depending on
+the machine. See the note under the colour table - the float values are the
+real prediction, and they are exact everywhere.
 
 ## The colour of every face, worked out in advance
 
@@ -144,12 +153,26 @@ face before pressing the key* - so it is worth being able to do all six.
 
 | Face | Normal | `N * 0.5 + 0.5` | 8-bit | Looks like |
 |---|---|---|---|---|
-| **+X** right | `( 1,  0,  0)` | `(1.0, 0.5, 0.5)` | `(255, 128, 128)` | pale pink |
-| **-X** left | `(-1,  0,  0)` | `(0.0, 0.5, 0.5)` | `(0, 128, 128)` | dark teal |
-| **+Y** top | `( 0,  1,  0)` | `(0.5, 1.0, 0.5)` | `(128, 255, 128)` | light green |
-| **-Y** bottom | `( 0, -1,  0)` | `(0.5, 0.0, 0.5)` | `(128, 0, 128)` | purple |
-| **+Z** front | `( 0,  0,  1)` | `(0.5, 0.5, 1.0)` | `(128, 128, 255)` | light blue |
-| **-Z** back | `( 0,  0, -1)` | `(0.5, 0.5, 0.0)` | `(128, 128, 0)` | olive |
+| **+X** right | `( 1,  0,  0)` | `(1.0, 0.5, 0.5)` | `(255, 127/128, 127/128)` | pale pink |
+| **-X** left | `(-1,  0,  0)` | `(0.0, 0.5, 0.5)` | `(0, 127/128, 127/128)` | dark teal |
+| **+Y** top | `( 0,  1,  0)` | `(0.5, 1.0, 0.5)` | `(127/128, 255, 127/128)` | light green |
+| **-Y** bottom | `( 0, -1,  0)` | `(0.5, 0.0, 0.5)` | `(127/128, 0, 127/128)` | purple |
+| **+Z** front | `( 0,  0,  1)` | `(0.5, 0.5, 1.0)` | `(127/128, 127/128, 255)` | light blue |
+| **-Z** back | `( 0,  0, -1)` | `(0.5, 0.5, 0.0)` | `(127/128, 127/128, 0)` | olive |
+
+**Why the 8-bit column says `127/128`.** The float values in the third column
+are exact and are the same on every machine. The 8-bit values are not quite:
+`0.5 x 255 = 127.5`, a perfect tie, and the OpenGL specification lets a driver
+round it either way. This was measured - the **same executable**, unmodified,
+produced `128` on an Intel UHD 770 and `127` on an NVIDIA RTX 5050. So predict
+the *float* value, and expect the mid-grey channel to read as 127 or 128
+depending on the machine. Nothing is wrong either way.
+
+(This is also a reminder that this laptop has two GPUs and Windows does not
+always hand the program the same one. Before any FPS comparison later in the
+project - Phase 33's shading-mode demonstrations and Phase 62's measurements -
+pin the executable to one GPU in Windows Graphics settings, or the numbers will
+be measuring different hardware.)
 
 The way to work one out in your head: **the axis it faces gets pushed to full
 or to zero, and the other two stay at half.** `+X` means "red all the way up,

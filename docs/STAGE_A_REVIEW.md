@@ -24,7 +24,7 @@ before Phase 14.**
 | Is the cube geometry correct (24 vertices, 36 indices, every face wound outward, one flat colour per face)? | **Yes**, all 12 triangles | Computed |
 | Is the quad geometry correct and correctly wound? | **Yes**, both triangles | Computed |
 | Is the orbit-camera maths correct, and does the 89 degree clamp really prevent the flip? | **Yes** | Computed |
-| Does every phase's checkpoint in `PHASE_PLAN.md` hold? | **10 of 11 fully. Phase 6 only partly** - see finding F1 | Code + build + run |
+| Does every phase's checkpoint in `PHASE_PLAN.md` hold? | **10 of 11 fully. Phase 6 only partly** - see finding F1 (fixed in Phase 19) | Code + build + run |
 | Do the docs match the code? | **Mostly.** Nine drift items, all cosmetic; listed in F3 | Read |
 | Is the "no Python, no pre-computed animation, no engine" rule respected? | **Yes** | Read + search |
 
@@ -338,7 +338,7 @@ Arithmetic cross-checks of the Phase 13 document's own numbers, all correct:
 
 | ID | Severity | Summary |
 |---|---|---|
-| F1 | **Medium** | Phase 6 pulse maths regressed: `* 0.1f` instead of `* 0.5f` |
+| F1 | ~~Medium~~ **FIXED in Phase 19** | Phase 6 pulse maths regressed: `* 0.1f` instead of `* 0.5f` |
 | F2 | Low | The slide is vertical, but the plan, Phase 4 document and variable name say horizontal |
 | F3 | Low | Nine places where a document disagrees with tuned code |
 | F4 | Low | Four stale code comments |
@@ -346,7 +346,15 @@ Arithmetic cross-checks of the Phase 13 document's own numbers, all correct:
 | F6 | Info | Three commits each cover two phases |
 | F7 | Info | Forward-looking risks for later stages |
 
-### F1 - Phase 6 pulse range is wrong (Medium)
+### F1 - Phase 6 pulse range is wrong (Medium) - FIXED in Phase 19
+
+> **Resolved on 4 October 2026.** The midpoint factor was changed from `0.1f` to
+> `0.5f`. Measured afterwards on 20 instants across a full pulse period, the
+> scale factor now runs from exactly `0.5000` to exactly `1.3000`, and the
+> triangle's smallest on-screen size went from 66 pixels (a dot) to 5 943. The
+> full before-and-after measurement is in
+> [PHASE_19_EXPLANATION.md](PHASE_19_EXPLANATION.md). The rest of this section
+> describes the defect as it was found, and is kept as the record.
 
 **Where:** [src/main.cpp:540-542](../src/main.cpp#L540-L542)
 
@@ -580,7 +588,7 @@ looks visibly wrong during the first step.
 
 Do these in order:
 
-1. **Fix F1.** In [src/main.cpp:541](../src/main.cpp#L541) change `* 0.1f` to
+1. ~~**Fix F1.**~~ **Done in Phase 19.** In [src/main.cpp:541](../src/main.cpp#L541) change `* 0.1f` to
    `* 0.5f`. Build with `F7`, run with `Shift+F5`, and watch one full pulse.
 2. Optionally reconcile the drift in F3/F4 (documents and four comments). None of
    it blocks Phase 14.

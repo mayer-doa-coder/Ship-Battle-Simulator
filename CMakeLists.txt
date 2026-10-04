@@ -31,6 +31,14 @@ if(WIN32)
         "${GLFW_LIBRARY}"
         OpenGL::GL
     )
+
+    # The vendored glfw3.lib was built against the RELEASE C runtime (MSVCRT).
+    # A Debug build of this project uses the debug runtime (MSVCRTD), so the
+    # linker sees two C runtimes requested and warns LNK4098. Telling it to
+    # ignore the release one leaves a single runtime in the Debug executable.
+    # Release builds already match and need nothing.
+    set_property(TARGET ship_battle_simulator APPEND_STRING
+        PROPERTY LINK_FLAGS_DEBUG " /NODEFAULTLIB:MSVCRT")
 else()
     # On Linux, GLFW is supplied by the system package manager.
     find_package(glfw3 REQUIRED)

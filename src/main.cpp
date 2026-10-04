@@ -1,4 +1,4 @@
-// Ship Battle Simulator - Phase 15: normals as colour.
+// Ship Battle Simulator - Phase 25: rebuilding meshes while the program runs.
 //
 // Every frame follows the same clear order:
 //   1. measure time;
@@ -7,16 +7,69 @@
 //   4. render the scene;
 //   5. show the frame and read window events.
 //
-// Phase 14 gave every vertex a normal, and nothing read it. This phase reads
-// it: pressing 'N' makes the fragment shader paint each pixel from its normal
-// instead of its colour, using N * 0.5 + 0.5 to turn a -1..+1 direction into
-// a 0..1 colour. Each cube face then shows one flat, predictable colour for
-// the axis it faces.
+// There is a floor now: a flat grid, lying in the XZ plane and facing straight
+// up. makeGrid() in src/Mesh.h is the project's first PARAMETERISED generator -
+// it is handed GridConfig::CELLS and builds a different amount of geometry
+// depending on it, where makeCube and makeQuad always build the same 24 and 4
+// vertices. At CELLS = 8 the grid is 81 vertices and 128 triangles.
 //
-// This is a tool, not a feature. A wrong normal is nearly invisible once it
-// is buried inside a lighting equation, so it is worth being able to see every
-// normal in the scene directly BEFORE any light depends on one - which is why
-// the plan puts this key here, eleven phases before the first light.
+// CELLS decides how finely the grid is DIVIDED. GridConfig::SIZE decides how
+// BIG it is, as a draw-time glm::scale, exactly like every other object since
+// Phase 16. Keeping those two apart is the whole idea.
+//
+// This mesh is the sea. Phase 40 displaces its y from the wave functions of x
+// and z, which is why it is built horizontal rather than upright like the quad,
+// and why its two parameters have to be x and z.
+//
+// Phase 19 added the way to SEE that CELLS did anything: in solid shading a flat
+// grid looks the same however finely it is cut, so press 'W'. The 'W' key also
+// prints the counts CELLS predicts, to check against the formula.
+//
+// Phase 20 adds the first CURVED surface: an open tube standing on the left,
+// built by makeCylinder() from a ring of sinf/cosf vertices. It is the first
+// mesh whose normals differ from vertex to vertex, each one computed
+// analytically as normalize(vec3(x, 0, z)) - straight out from the axis. Press
+// 'N' and the colours sweep smoothly round its circumference instead of showing
+// one flat value per face.
+//
+// Phase 21 closed it. Each end got a centre vertex and a triangle fan with a
+// FLAT normal - (0, +1, 0) on top and (0, -1, 0) underneath. Those caps cannot
+// reuse the wall's rim vertices, because a vertex carries one normal and the
+// wall's points sideways, so the mesh grew to 4*segments + 2.
+//
+// Phase 22 added a sphere, the last of the five meshes the whole project is built
+// from. It is the first generator with TWO parameters - stacks for latitude and
+// slices for longitude, independent of each other - and the one with the
+// simplest normal of all: for a ball centred on its own origin, the direction
+// out from the centre IS the surface normal, so the normal is just
+// normalize(position). Press 'N' and it renders as the classic RGB ball.
+//
+// Phase 23 added no sixth shape. Every normal before it was ANALYTIC, written
+// down because the shape was known; that phase added the other method -
+// computeSmoothNormals(), the L9 slide 20 averaging formula - and a SECOND cube
+// built from 8 shared corners to demonstrate it on. The two cubes on the right
+// are the same size in the same rotation, differing only in that. The flat cube
+// CANNOT be smoothed, and why not is the lesson.
+//
+// Phase 24 counts the cost. Every draw passes through drawMesh(), so that is
+// where the draw calls, triangles and vertices are tallied, and the totals go
+// into the window title - a HUD that needs no font, no texture and no extra
+// geometry, and that survives into a screen recording. These are MEASUREMENTS of
+// what was drawn, not predictions from the config, which makes them the right
+// thing to check a hand-worked triangle count against.
+//
+// Phase 25 finishes Stage B by making the geometry adjustable. '+' and '-' move
+// one detail level, and the grid, cylinder and sphere are built again from it
+// while the scene keeps turning - six levels spanning 92 to 36,116 triangles. The
+// one line that makes that safe is the destroy() at the top of Mesh::upload(),
+// written in Phase 14 for exactly this moment: without it every press would
+// abandon three GPU buffers with nothing able to free them again.
+//
+// Two things in it are worth more than the feature. Each level's divisions are
+// worked out from the LEVEL-0 constant rather than from the level before, so '-'
+// then '+' returns to precisely where it started instead of drifting; and the
+// draw count stays at 10 at every level, because detail changes how finely the
+// same objects are divided, never how many objects there are.
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -38,7 +91,7 @@ namespace AppConfig {
 // These values are grouped here so they are easy to find and change during a viva.
 constexpr int WINDOW_WIDTH = 1280;
 constexpr int WINDOW_HEIGHT = 720;
-constexpr const char* WINDOW_TITLE = "Ship Battle Simulator - Phase 15: Normals as Colour";
+constexpr const char* WINDOW_TITLE = "Ship Battle Simulator - Phase 25";
 constexpr const char* VERTEX_SHADER_PATH = "shaders/basic.vert";
 constexpr const char* FRAGMENT_SHADER_PATH = "shaders/basic.frag";
 
@@ -206,56 +259,286 @@ const glm::vec3 FAR_COPY_TINT(3.0f, 0.5f, 0.4f);
 
 namespace QuadConfig {
 
-// Phase 9: 4 UNIQUE corners, one row each. Phase 14 turned each row into a
-// `Vertex` - position, normal, colour - with the same numbers as before.
-// A different colour on each corner makes the shared diagonal easy to see,
-// and makes a wrong index (see INDICES below) obvious: the colours would no
-// longer blend the way they are supposed to.
-//   0: top-left (red)  1: top-right (green)
-//   3: bottom-left (yellow)  2: bottom-right (blue)
+// Phase 17: the quad's four vertices and six indices are gone from this file.
+// Phase 9 wrote them out by hand (4 rows and 6 numbers) and Phase 14 wrapped
+// each row in a `Vertex`; makeQuad() in src/Mesh.h now generates exactly the
+// same shape, as a unit quad - 1 x 1, centred on its own origin, facing +Z.
 //
-// Like the triangle, the quad is flat in the XY plane, so every corner's
-// normal points the same way: +Z, straight at the camera's starting position.
-const glm::vec3 FLAT_NORMAL(0.0f, 0.0f, 1.0f);
-
-const Vertex VERTICES[] = {
-    { { -0.4f,  0.4f, 0.0f }, FLAT_NORMAL, { 1.0f, 0.0f, 0.0f } },   // 0: top-left,     red
-    { {  0.4f,  0.4f, 0.0f }, FLAT_NORMAL, { 0.5f, 1.0f, 0.0f } },   // 1: top-right,    green
-    { {  0.4f, -0.4f, 0.0f }, FLAT_NORMAL, { 0.1f, 0.7f, 1.0f } },   // 2: bottom-right, blue
-    { { -0.4f, -0.4f, 0.0f }, FLAT_NORMAL, { 1.0f, 1.0f, 0.9f } },   // 3: bottom-left,  yellow
+// What stays here is what is a choice about how the quad LOOKS and where it
+// STANDS, which is the same split the cube made in Phase 14:
+//
+// The four corner colours, in the order makeQuad() walks its corners:
+// bottom-left, bottom-right, top-right, top-left. A different colour on every
+// corner makes the shared diagonal easy to see, and makes a wrong index
+// obvious (the colours would no longer blend the way they are supposed to).
+// These are the same four colours the quad has had since Phase 9, now listed
+// in the generator's order instead of the old hand-typed one.
+const glm::vec3 CORNER_COLORS[4] = {
+    { 1.0f, 1.0f, 0.9f },   // 0: bottom-left,  yellow
+    { 0.1f, 0.7f, 1.0f },   // 1: bottom-right, blue
+    { 0.5f, 1.0f, 0.0f },   // 2: top-right,    green
+    { 1.0f, 0.0f, 0.0f },   // 3: top-left,     red
 };
 
-// Two triangles, sharing the diagonal that runs from corner 2 to corner 0.
-// Corners 0 and 2 are each named ONCE in VERTICES above but used TWICE here -
-// that reuse is the entire point of indexed drawing. Listed the old way,
-// without indices, this quad would need 6 rows of vertex data (36 floats)
-// with corners 0 and 2 typed out twice each. This way it needs 4 rows
-// (24 floats) plus these 6 small integers.
-constexpr unsigned int INDICES[] = {
-    0, 3, 2,   // top-left, bottom-left, bottom-right
-    2, 1, 0,   // bottom-right, top-right, top-left
-};
-
-constexpr int VERTEX_COUNT = 4;
-constexpr int INDEX_COUNT = 6;
+// Phase 17: how big the quad is, as a multiple of the 1 x 1 unit mesh. It is
+// the quad's width AND its height, and it is the viva value for this phase:
+// change this one number and the quad resizes while the four vertices on the
+// GPU stay exactly as they were.
+//
+// 0.8 is not arbitrary. The quad's corners sat at +-0.4 from Phase 9 until
+// now, which is 0.8 across, so a scale of 0.8 on the 1 x 1 unit quad puts every
+// corner in exactly the place it already was. The picture does not move.
+//
+// It is one number for both directions on purpose - a uniform scale, like the
+// cubes' (Phase 16). A flat quad facing +Z could take separate width and
+// height values without disturbing its normal, because the normal lies along
+// the one axis left unscaled; it is simply not needed yet.
+constexpr float SIZE = 0.8f;
 
 // Phase 9: the quad does not move. It sits to one side, at the same distance
 // from the camera as the other two triangles rest at, so it is easy to find
-// and does not overlap them. Its ONLY job is to prove indexed drawing works;
-// giving it motion too would blur that one idea with Phases 4-7's.
+// and does not overlap them. Its job was to prove indexed drawing works (Phase
+// 9) and is now to show the simplest generator (Phase 17); giving it motion
+// too would blur those ideas with Phases 4-7's.
 const glm::vec3 POSITION(-1.8f, 0.0f, 0.0f);
 
 } // namespace QuadConfig
 
+namespace GridConfig {
+
+// Phase 18: how finely the grid is divided. This is the plan's N, and it is
+// the viva value for this phase: it is the first number in the project that
+// changes how much geometry exists rather than how that geometry looks.
+//
+//     vertices  = (CELLS + 1) * (CELLS + 1) =  81 at CELLS = 8
+//     triangles = 2 * CELLS * CELLS         = 128 at CELLS = 8
+//
+// Changing it does NOT change the grid's size - that is SIZE below. Division
+// and size are two separate ideas, and keeping them apart is the point of the
+// unit-mesh rule (Phase 16). Raise this to 32 and the grid is cut into far
+// more, far smaller triangles while covering exactly the same ground.
+//
+// In solid shading a higher CELLS looks almost identical, because the surface
+// is flat; press 'W' for wireframe to see what actually changed. Phase 19 is
+// the phase that makes that comparison its checkpoint.
+constexpr int CELLS = 8;
+
+// Phase 25: CELLS above is now only the division at detail level 0. '+' and '-'
+// move the level, and every level's value is worked out from CELLS rather than
+// from the previous value.
+//
+// The floor is not a matter of taste: a grid needs at least one cell to be a
+// surface at all, and 2 keeps a visible cross of interior edges so the wireframe
+// still shows that neighbouring cells share their corners. See DetailConfig for
+// why this is a floor and not also a ceiling.
+constexpr int CELLS_MIN = 2;
+
+// Phase 18: how big the grid is, as a multiple of the 1 x 1 unit mesh, applied
+// by a glm::scale at draw time like every other object's size.
+constexpr float SIZE = 4.0f;
+
+// Where the grid sits: below everything else, as a floor. The lowest point any
+// other object reaches is the large cube's bottom corner at y = -1.15, so
+// -1.40 keeps the grid clear of all of them with room to spare.
+//
+// At the default camera position the grid is seen at a shallow angle, so it
+// reads as a band of floor across the bottom of the window. Drag the mouse
+// upward to lift the camera and look down on it properly - that is the view
+// this phase's checkpoint is about.
+const glm::vec3 POSITION(0.0f, -1.40f, 0.0f);
+
+// One colour per CORNER OF THE WHOLE GRID, in the order makeGrid walks them:
+// (-x,-z), (+x,-z), (+x,+z), (-x,+z). Every vertex between them is blended
+// from all four, so the grid is a smooth sheet with no visible seams - which
+// is itself the proof that neighbouring cells share their corner vertices.
+//
+// Blues and teals, as a quiet preview of the sea this mesh becomes in Phase 40,
+// and bright enough to read clearly against the golden background.
+const glm::vec3 CORNER_COLORS[4] = {
+    { 0.10f, 0.25f, 0.55f },   // 0: -x -z, deep blue
+    { 0.10f, 0.45f, 0.70f },   // 1: +x -z, mid blue
+    { 0.25f, 0.70f, 0.85f },   // 2: +x +z, pale cyan
+    { 0.15f, 0.40f, 0.65f },   // 3: -x +z, blue
+};
+
+} // namespace GridConfig
+
+namespace CylinderConfig {
+
+// Phase 20: how many flat strips the circle is cut into. Like GridConfig::CELLS
+// this changes how finely the surface is DIVIDED, not how big it is, and it is
+// the viva value for this phase.
+//
+//     vertices  = 2 * SEGMENTS = 32 at SEGMENTS = 16
+//     triangles = 2 * SEGMENTS = 32 at SEGMENTS = 16
+//
+// 16 looks convincingly round. Drop it to 6 and the tube is visibly a hexagonal
+// prism - every triangle is flat, and a low segment count stops hiding it. That
+// is exactly the setup Phase 33's Demo B uses on the cannon barrel.
+constexpr int SEGMENTS = 16;
+
+// Phase 25: the fewest segments this mesh may be built with. SEGMENTS above is
+// the value at detail level 0.
+//
+// Three is the fewest that still enclose a volume, but 4 is used as the floor
+// because it makes the point better: at 4 the "cylinder" is an obvious square
+// prism, so nobody can mistake a round-looking shape for a round one. This is
+// the low end of Phase 33's Demo B, where the same faceting is what makes a
+// specular highlight break up on the cannon barrel.
+constexpr int SEGMENTS_MIN = 4;
+
+// Phase 20: how big it is, as a multiple of the 1 x 1 x 1 unit mesh. The unit
+// tube is 1 across and 1 tall, so these are the real diameter and height, and
+// the draw-time scale is (DIAMETER, HEIGHT, DIAMETER).
+constexpr float DIAMETER = 0.5f;
+constexpr float HEIGHT = 0.9f;
+
+// Standing above the quad on the left of the scene, clear of everything: the
+// quad's top edge is at y = +0.40 and this tube's base is at +0.50.
+const glm::vec3 POSITION(-1.8f, 0.95f, 0.0f);
+
+// A vertical gradient, bottom to top. These are VERTEX COLOURS, not lighting -
+// there is no light in this project until Phase 27, and it is worth saying so
+// because a dark-to-light gradient on a round object looks a lot like shading.
+//
+// Steel grey to bright silver, as a quiet preview of the polished-silver
+// fittings material (L8 slide 60), and chosen to stand out from the golden
+// background rather than blend into it the way a brass colour would.
+const glm::vec3 BOTTOM_COLOR(0.20f, 0.20f, 0.24f);
+const glm::vec3 TOP_COLOR(0.85f, 0.86f, 0.92f);
+
+} // namespace CylinderConfig
+
+namespace SphereConfig {
+
+// Phase 22: the first shape with TWO division parameters, and they are
+// deliberately given DIFFERENT values. If they were both 16, a bug that mixed
+// latitude up with longitude would look perfectly fine; at 12 and 18 it shows
+// immediately, because the ball would come out subdivided the wrong way round.
+//
+//     rings     = STACKS - 1                    =   11
+//     vertices  = 2 + (STACKS - 1) * SLICES     =  200
+//     triangles = 2 * SLICES * (STACKS - 1)     =  396
+//
+// STACKS is latitude: bands from the north pole to the south.
+constexpr int STACKS = 12;
+// SLICES is longitude: steps around each ring.
+constexpr int SLICES = 18;
+
+// Phase 25: the fewest of each this mesh may be built with. STACKS and SLICES
+// above are the values at detail level 0.
+//
+// Both floors are 3, the fewest either can be and still describe a solid: 2
+// slices would be a flat sheet folded in half, and 2 stacks would be two cones
+// base to base with no ring between them.
+//
+// Phase 22 chose 12 and 18 precisely because they are DIFFERENT, so that a bug
+// mixing latitude up with longitude cannot hide. Every detail level has to keep
+// that true, and it is the reason this phase works out each level's value from
+// the number above rather than from the level before it - see DetailConfig.
+constexpr int STACKS_MIN = 3;
+constexpr int SLICES_MIN = 3;
+
+// Phase 22: how big it is, as a multiple of the 1 x 1 x 1 unit mesh. A sphere is
+// round on every axis, so the draw-time scale uses this one number three times -
+// the only mesh in the project for which all three factors are the same. Compare
+// the quad's (SIZE, SIZE, 1), the grid's (SIZE, 1, SIZE) and the cylinder's
+// (DIAMETER, HEIGHT, DIAMETER).
+constexpr float DIAMETER = 0.72f;
+
+// Below the quad, completing the left-hand column: cylinder on top, quad in the
+// middle, ball at the bottom. It clears the quad's lower edge (y = -0.40) by
+// 0.12 and the grid floor (y = -1.40) by 0.16.
+const glm::vec3 POSITION(-1.8f, -0.88f, 0.0f);
+
+// A vertical gradient from pole to pole. VERTEX COLOURS, not lighting - there is
+// still no light in this project until Phase 27. Violet to lilac, picked to stand
+// apart from the golden background, the blue grid and the silver cylinder.
+const glm::vec3 BOTTOM_COLOR(0.18f, 0.08f, 0.30f);
+const glm::vec3 TOP_COLOR(0.62f, 0.42f, 0.85f);
+
+} // namespace SphereConfig
+
+namespace DetailConfig {
+
+// Phase 25: ONE number decides how finely every parameterised mesh is divided.
+// '+' raises it, '-' lowers it, and each mesh works out its own divisions from
+// it. Level 0 is the detail every phase up to 24 shipped with.
+//
+// Each level DOUBLES the divisions, because detail is about whether a surface
+// looks smooth and going from 8 cells to 9 is invisible while 8 to 16 is
+// obvious. Each press therefore has to be worth pressing, and the whole range is
+// reachable in a few presses instead of a hundred.
+//
+// These counts were MEASURED with the Phase 24 counters, not worked out by hand:
+//
+//   level | grid  cylinder   sphere  | triangles  vertices submitted
+//   ------|--------------------------|-----------------------------
+//     -2  |    2        4    3 x   4 |        92              127
+//     -1  |    4        8    6 x   9 |       206              196
+//      0  |    8       16   12 x  18 |       640              437
+//     +1  |   16       32   24 x  36 |     2,348            1,339
+//     +2  |   32       64   48 x  72 |     9,124            4,823
+//     +3  |   64      128   96 x 144 |    36,116           18,511
+//
+// The draw count is 10 at every one of them. Detail changes how finely the same
+// objects are divided, never how many objects there are, and that is the clearest
+// thing the window title shows while '+' is pressed.
+//
+// THE IMPORTANT PART: a level's values are worked out from the level-0 numbers,
+// never from the level before. Repeatedly halving a running value loses the
+// remainder - 18 becomes 9, then 4 - so '-' twice and '+' twice would leave the
+// sphere at 12 x 12 instead of 12 x 18. That is not just untidy. Phase 22 chose
+// 12 and 18 BECAUSE they differ, so that a bug confusing latitude with longitude
+// cannot hide; 12 x 12 would hide exactly that. Deriving each level from the
+// start instead makes '-' then '+' return to precisely where it began, and keeps
+// STACKS and SLICES unequal at every level.
+//
+// The level is clamped rather than the individual values, so the ceiling is one
+// number instead of four. The per-mesh _MIN constants stay as a floor: they are
+// what stops a shape being asked for fewer divisions than it needs to be a
+// surface at all, and they would matter immediately if a level-0 value were
+// lowered or LEVEL_MIN widened.
+constexpr int LEVEL_START = 0;
+constexpr int LEVEL_MIN = -2;
+constexpr int LEVEL_MAX = 3;
+
+} // namespace DetailConfig
+
+namespace SmoothCubeConfig {
+
+// Phase 23: a second cube, built from 8 SHARED corners and smoothed by
+// computeSmoothNormals(), placed for a side-by-side comparison with the flat
+// 24-vertex one.
+//
+// The SCALE deliberately matches CubeConfig::SCALES[1] exactly, and the position
+// sits just above that cube, so the two are the same size and adjacent. The only
+// difference between them is how their normals were decided - which is the whole
+// point of the phase, and would be muddied by comparing two different sizes.
+constexpr float SCALE = 0.48f;
+
+// Just above flat cube 1 at (2.20, 0.10). All four cubes share one rotation, so
+// two of them overlap only if their centres are closer than sqrt(3) * (h1 + h2);
+// here that is 0.831 and the distance is 0.922.
+const glm::vec3 POSITION(2.00f, 1.00f, 0.0f);
+
+// Coloured by corner HEIGHT, not by face - because it cannot be coloured by face.
+// A shared corner carries one colour for all three faces that meet there, exactly
+// as it carries one normal. That impossibility is the Phase 10 lesson seen from
+// the other side, so it is worth leaving visible rather than working around.
+const glm::vec3 BOTTOM_COLOR(0.30f, 0.12f, 0.06f);
+const glm::vec3 TOP_COLOR(0.95f, 0.72f, 0.45f);
+
+} // namespace SmoothCubeConfig
+
 namespace CubeConfig {
 
-// Phase 10: the cube's size. It is the ONLY dimension this cube has - every
-// face reaches exactly this far from the centre on every axis, so the cube
-// stays a true cube. Doubling it makes the cube twice as wide, tall, AND
-// deep at once. Giving width, height, and depth their own separate values
-// waits until Phase 16's reusable, parameterised mesh generators.
-constexpr float HALF_SIZE = 0.5f;
-
+// Phase 16: HALF_SIZE used to live here, and makeCube() used to be given it.
+// Both are gone. The mesh is now a UNIT cube - exactly 1 x 1 x 1, centred on
+// its own origin - and a cube's real size is the SCALES entry below, applied
+// by a glm::scale inside the drawMesh call. The vertex data on the GPU no
+// longer knows how big any cube on screen is.
+//
 // Phase 14: the cube's six face colours, one per face, in the same order
 // makeCube() walks its faces: +Z, -Z, +X, -X, +Y, -Y.
 //
@@ -279,9 +562,43 @@ const glm::vec3 FACE_COLORS[6] = {
     { 1.0f, 0.0f, 1.0f },   // -Y bottom - magenta
 };
 
-// Phase 10: where the cube sits, away from the triangles and mirrored across
-// the quad so all three objects are easy to tell apart on screen.
-const glm::vec3 POSITION(1.8f, 0.0f, 0.0f);
+// Phase 16: three cubes, drawn from the ONE unit mesh above.
+//
+// Where each cube sits. They are kept on the right of the scene, clear of the
+// quad on the left and the triangles in the middle, and spread far enough
+// apart that none of them touches another even at the widest point of its
+// spin (a turning cube reaches 0.866 * its size from its own centre, because
+// its corner is at sqrt(3)/2 of its width).
+//
+// To add or remove a cube, edit THIS list and SCALES below. Nothing else needs
+// touching: COUNT counts this list for you, and no mesh is uploaded per cube.
+const glm::vec3 POSITIONS[] = {
+    {  1.10f, -0.50f, 0.0f },   // large
+    {  2.20f,  0.10f, 0.0f },   // medium
+    {  1.25f,  0.85f, 0.0f },   // small
+};
+
+// How many cubes exist. It is COUNTED from the list above rather than typed
+// in, so the two can never disagree. Writing it by hand meant a wrong number
+// here described cubes that had no position and no size.
+constexpr int COUNT = static_cast<int>(sizeof(POSITIONS) / sizeof(POSITIONS[0]));
+
+// How big each cube is, as a multiple of the unit mesh. This is the phase's
+// key viva value: change one of these numbers and that one cube resizes, while
+// the mesh data on the GPU is not touched at all.
+//
+// They are uniform scales - the same factor on x, y, and z - on purpose.
+// A NON-uniform scale breaks the naive transformation of a normal and needs
+// the normal matrix to correct it, which is Phase 26's lesson, so it is left
+// out until the phase that can explain it.
+constexpr float SCALES[] = { 0.75f, 0.48f, 0.30f };
+
+// Every cube needs BOTH a position and a size, so the two lists must be the
+// same length. The compiler checks it here rather than the program reading a
+// size that was never written.
+static_assert(sizeof(SCALES) / sizeof(SCALES[0]) == sizeof(POSITIONS) / sizeof(POSITIONS[0]),
+              "CubeConfig: POSITIONS and SCALES must have the same number of "
+              "entries - every cube needs both a place and a size.");
 
 // How the cube turns. The axis is deliberately NOT one of X, Y, or Z alone -
 // a tilted axis means every face eventually faces the camera as the cube
@@ -304,6 +621,28 @@ struct FrameClock {
     float lastFrameTime = 0.0f;
 };
 
+// Phase 24: what ONE frame actually cost, counted as it is drawn.
+//
+// These are MEASUREMENTS, not predictions. Every draw in the project goes
+// through drawMesh(), so counting there cannot drift away from what really
+// happened: if a draw is added, removed, or accidentally issued twice, these
+// numbers change by themselves.
+//
+// That is the difference between this and the line the 'W' key prints
+// (Phase 19), which works the numbers out from GridConfig. A prediction tells
+// you what the code INTENDS; a measurement tells you what it DID. Having both
+// is how you find out they disagree.
+struct RenderStats {
+    int drawCalls = 0;
+
+    // Vertices and triangles SUBMITTED this frame, which is not the same as the
+    // amount stored on the graphics card: a mesh drawn three times is counted
+    // three times here but uploaded once. That gap is the mesh-reuse argument,
+    // and Phase 62 measures it properly.
+    int vertices = 0;
+    int triangles = 0;
+};
+
 // Small counters used only for the once-per-second console report.
 struct FrameStats {
     float reportStartTime = 0.0f;
@@ -315,6 +654,36 @@ struct FrameStats {
 // other. The `Mesh` class in src/Mesh.h replaced all three. It holds the same
 // handles, but it also knows how many indices to draw and deletes its own
 // buffers, which a bare struct of handles could never do on its own.
+
+// Phase 25: the first numbers in the project that decide how much geometry
+// exists AND are allowed to change while the program runs.
+//
+// Until now every division parameter was a `constexpr int` in a config
+// namespace, which means the compiler burns it into the executable and nothing
+// can alter it. These four are ordinary variables, seeded from those config
+// values, so the config constants become the STARTING detail rather than the
+// only detail.
+//
+// They are grouped in their own struct rather than loose in SceneState because
+// they share one job: any change to any of them means the three parameterised
+// meshes have to be built again. `needsRebuild` is that message. processInput()
+// sets it when a key is pressed and main() clears it once the meshes are back,
+// which keeps the input code free of mesh handles and keeps the expensive work
+// out of the key handler.
+//
+// `level` is the only one a key changes. The other four are worked out from it by
+// applyDetailLevel(), so they are a cache of that arithmetic rather than four
+// independent values that could drift apart.
+struct MeshDetail {
+    int level = DetailConfig::LEVEL_START;
+
+    int cells = GridConfig::CELLS;
+    int segments = CylinderConfig::SEGMENTS;
+    int stacks = SphereConfig::STACKS;
+    int slices = SphereConfig::SLICES;
+
+    bool needsRebuild = false;
+};
 
 // Data that changes as the scene changes. updateScene() writes it and
 // renderScene() reads it, so neither function needs to know about the other.
@@ -341,17 +710,64 @@ struct SceneState {
     // the two stay overlapping on screen no matter how the first one moves.
     glm::mat4 farCopyModel = glm::mat4(1.0f);
 
-    // Phase 9: the quad's model matrix. It never changes shape, only where it
+    // Phase 9: the quad's matrix. It never changes shape, only where it
     // sits, so this is really just QuadConfig::POSITION turned into a matrix.
     // It is still rebuilt every frame, for the same reason as everything
     // else here: renderScene() should only ever read scene state, never
     // calculate it.
-    glm::mat4 quadModel = glm::mat4(1.0f);
+    //
+    // Phase 17: renamed from quadModel to quadFrame, because it now follows
+    // the unit-mesh rule (Phase 16) like the cubes do. It holds the quad's
+    // PLACE only - a translation - and no scale. The quad's size,
+    // QuadConfig::SIZE, is multiplied on at draw time in renderScene().
+    glm::mat4 quadFrame = glm::mat4(1.0f);
 
-    // Phase 10: the cube's model matrix. Unlike the quad, this one DOES
-    // depend on 'now' - the cube spins - so it earns being rebuilt every
-    // frame rather than just sitting there out of habit.
-    glm::mat4 cubeModel = glm::mat4(1.0f);
+    // Phase 18: the grid's frame - a translation to GridConfig::POSITION and
+    // nothing else, following the same rule as the quad's and the cubes'. Its
+    // size, GridConfig::SIZE, is multiplied on at draw time.
+    glm::mat4 gridFrame = glm::mat4(1.0f);
+
+    // Phase 20: the cylinder's frame - a translation to CylinderConfig::POSITION
+    // and nothing else. Its diameter and height are multiplied on at draw time.
+    glm::mat4 cylinderFrame = glm::mat4(1.0f);
+
+    // Phase 22: the sphere's frame - a translation to SphereConfig::POSITION and
+    // nothing else. Its diameter is multiplied on at draw time.
+    glm::mat4 sphereFrame = glm::mat4(1.0f);
+
+    // Phase 23: the smooth cube's frame. It shares the flat cubes' rotation, so
+    // the two turn in perfect step and the only difference between them is the
+    // normals.
+    glm::mat4 smoothCubeFrame = glm::mat4(1.0f);
+
+    // Phase 16: one FRAME per cube. A frame holds where the cube is and how
+    // it is turned - a translation and a rotation - and deliberately NO
+    // scale. The scale is multiplied on at the last possible moment, inside
+    // the drawMesh call in renderScene().
+    //
+    // Keeping scale out of a stored matrix looks like a small detail now,
+    // with three separate cubes. It becomes the single most important rule in
+    // the project at Stage D, when the cannon is a child of the deck and the
+    // deck is a child of the hull: a scale left in a parent's matrix is
+    // inherited by every child beneath it, so a stretched hull would stretch
+    // the cannon, the masts, and the crew standing on it. Storing frames
+    // unscaled makes that impossible by construction.
+    //
+    // Like the old single cubeModel, these DO depend on 'now', because the
+    // cubes spin.
+    //
+    // The `= {}` matters. glm::mat4's default constructor is `= default`, so
+    // an array declared without it would hold whatever happened to be in
+    // memory. `= {}` value-initialises every element, which for a type like
+    // this fills it with zeros - not the identity, but a definite, repeatable
+    // value rather than garbage. updateScene() overwrites all of them every
+    // frame before renderScene() reads any, so zero is never what gets drawn.
+    //
+    // This deliberately does NOT name each element. An initialiser list with
+    // one entry per cube would have to be kept in step with CubeConfig by hand,
+    // which is exactly the kind of duplication that lets a half-finished edit
+    // stop the project compiling. Written this way, any number of cubes works.
+    glm::mat4 cubeFrames[CubeConfig::COUNT] = {};
 
     // Phase 8: toggled by the 'D' key. True matches the driver's normal
     // behaviour: the nearer fragment wins regardless of draw order. False
@@ -384,6 +800,12 @@ struct SceneState {
     // instead, so every normal in the scene can be checked by eye.
     bool debugNormalsEnabled = false;
     bool debugNormalsKeyWasDown = false;
+
+    // Phase 25: how finely the parameterised meshes are currently divided,
+    // changed by '+' and '-'.
+    MeshDetail detail;
+    bool detailUpKeyWasDown = false;
+    bool detailDownKeyWasDown = false;
 };
 
 static void glfwErrorCallback(int errorCode, const char* description)
@@ -396,6 +818,99 @@ static void framebufferSizeCallback(GLFWwindow* /*window*/, int width, int heigh
     // OpenGL draws into the framebuffer, whose pixel size can differ from the
     // window size on high-DPI displays. Updating the viewport prevents stretching.
     glViewport(0, 0, width, height);
+}
+
+// Phase 25: one mesh's divisions at a given detail level.
+//
+// Each level doubles, so the arithmetic is a shift: level +3 is "times 8" and
+// level -2 is "divided by 4". Using a shift rather than a loop of multiplications
+// says that directly, and a right shift rounds down exactly as integer division
+// would.
+//
+// `startValue` is always the mesh's level-0 constant, never the value from the
+// previous level. That is what makes the whole scheme reversible: level 0 gives
+// the level-0 constant back exactly, however many presses it took to get there.
+// constexpr so the static_asserts below can run it at compile time.
+static constexpr int detailAtLevel(int startValue, int level, int minimum)
+{
+    const int scaled = (level >= 0) ? (startValue << level) : (startValue >> -level);
+    return (scaled < minimum) ? minimum : scaled;
+}
+
+// Phase 25: the two properties the detail scheme has to have, checked by the
+// compiler rather than trusted.
+//
+// First: level 0 must reproduce each mesh's level-0 constant exactly. If it did
+// not, MeshDetail's default values and this function would disagree about what
+// the program starts with, and the startup build would differ from the build you
+// get by pressing '+' then '-'.
+static_assert(detailAtLevel(GridConfig::CELLS, 0, GridConfig::CELLS_MIN)
+                  == GridConfig::CELLS, "level 0 must give GridConfig::CELLS");
+static_assert(detailAtLevel(CylinderConfig::SEGMENTS, 0, CylinderConfig::SEGMENTS_MIN)
+                  == CylinderConfig::SEGMENTS, "level 0 must give CylinderConfig::SEGMENTS");
+static_assert(detailAtLevel(SphereConfig::STACKS, 0, SphereConfig::STACKS_MIN)
+                  == SphereConfig::STACKS, "level 0 must give SphereConfig::STACKS");
+static_assert(detailAtLevel(SphereConfig::SLICES, 0, SphereConfig::SLICES_MIN)
+                  == SphereConfig::SLICES, "level 0 must give SphereConfig::SLICES");
+
+// Second: the sphere's two division counts must stay DIFFERENT at every level
+// the keys can reach. Phase 22 picked 12 and 18 so that a bug swapping latitude
+// for longitude could not hide behind matching numbers, and a detail scheme that
+// let them become equal at some level would quietly undo that.
+static constexpr bool sphereDivisionsDifferAt(int level)
+{
+    return detailAtLevel(SphereConfig::STACKS, level, SphereConfig::STACKS_MIN)
+        != detailAtLevel(SphereConfig::SLICES, level, SphereConfig::SLICES_MIN);
+}
+
+static_assert(sphereDivisionsDifferAt(-2) && sphereDivisionsDifferAt(-1)
+                  && sphereDivisionsDifferAt(0) && sphereDivisionsDifferAt(1)
+                  && sphereDivisionsDifferAt(2) && sphereDivisionsDifferAt(3),
+              "sphere STACKS and SLICES must differ at every reachable detail level");
+
+// Phase 25: works out every parameterised mesh's divisions from detail.level.
+// Called whenever the level changes, so the four cached values are never stale.
+static void applyDetailLevel(MeshDetail& detail)
+{
+    detail.cells = detailAtLevel(GridConfig::CELLS, detail.level, GridConfig::CELLS_MIN);
+    detail.segments = detailAtLevel(CylinderConfig::SEGMENTS, detail.level,
+                                    CylinderConfig::SEGMENTS_MIN);
+    detail.stacks = detailAtLevel(SphereConfig::STACKS, detail.level, SphereConfig::STACKS_MIN);
+    detail.slices = detailAtLevel(SphereConfig::SLICES, detail.level, SphereConfig::SLICES_MIN);
+}
+
+// Phase 25: moves the detail level one step and asks for a rebuild, unless the
+// level is already at the end of its range.
+static void changeDetail(SceneState& scene, bool up)
+{
+    MeshDetail& detail = scene.detail;
+
+    const int wanted = detail.level + (up ? 1 : -1);
+    const int clamped = std::max(DetailConfig::LEVEL_MIN,
+                                 std::min(DetailConfig::LEVEL_MAX, wanted));
+
+    if (clamped == detail.level) {
+        std::printf("[detail] already at the %s level (%d)\n",
+                    up ? "highest" : "lowest", detail.level);
+        return;
+    }
+
+    detail.level = clamped;
+    applyDetailLevel(detail);
+
+    // The prediction, printed from the detail values. The [mesh] lines the
+    // rebuild prints next are the measurement, and the window title's triangle
+    // count is the measurement for the whole frame - the same
+    // prediction-against-measurement pairing Phase 24 is built on.
+    std::printf("[detail] level %+d: grid CELLS %d, cylinder SEGMENTS %d, "
+                "sphere STACKS %d SLICES %d\n",
+                detail.level,
+                detail.cells,
+                detail.segments,
+                detail.stacks,
+                detail.slices);
+
+    detail.needsRebuild = true;
 }
 
 static void processInput(GLFWwindow* window, SceneState& scene)
@@ -434,6 +949,28 @@ static void processInput(GLFWwindow* window, SceneState& scene)
             scene.wireframeEnabled
                 ? "ON, culling OFF (every triangle's outline is visible, front and back)"
                 : "OFF, culling ON (the normal solid view)");
+
+        // Phase 19: when the outlines come on, print the number they should add
+        // up to. The point of the wireframe view on a parameterised mesh is to
+        // check the count by eye against the formula, and that is much easier
+        // with the arithmetic written out beside it.
+        //
+        // These numbers come from the detail values, not from the Mesh, so they
+        // are the PREDICTION. The actual counts the mesh reported when it was
+        // uploaded are what they should match. (The live per-frame counters in
+        // the window title are a different thing and belong to Phase 24.)
+        //
+        // Phase 25: this reads scene.detail.cells, NOT GridConfig::CELLS. The
+        // config constant is only the starting value now, so predicting from it
+        // would keep printing 8 after '+' had already rebuilt the grid at 16 -
+        // a prediction that cannot be wrong is worthless.
+        if (scene.wireframeEnabled) {
+            const int n = scene.detail.cells;
+            std::printf(
+                "            grid: CELLS = %d, so expect %d x %d = %d quads, "
+                "2 x %d x %d = %d triangles, and (%d + 1)^2 = %d vertices\n",
+                n, n, n, n * n, n, n, 2 * n * n, n, (n + 1) * (n + 1));
+        }
     }
     scene.wireframeKeyWasDown = wireframeKeyIsDown;
 
@@ -465,6 +1002,29 @@ static void processInput(GLFWwindow* window, SceneState& scene)
                 : "T * R * S (correct)");
     }
     scene.orderKeyWasDown = orderKeyIsDown;
+
+    // Phase 25: '+' raises the detail level and '-' lowers it, rebuilding every
+    // parameterised mesh. Same edge-detection as every other key here, and it
+    // matters more for these two than for any of the others: a held key would
+    // rebuild three meshes on the graphics card roughly 120 times a second.
+    //
+    // On most keyboards '+' needs Shift, so GLFW_KEY_EQUAL - the unshifted key
+    // with '+' printed on it - is accepted as well, and the numeric keypad's own
+    // '+' and '-' alongside both. GLFW reports physical keys, not the characters
+    // they would type, so all four have to be named explicitly.
+    const bool detailUpIsDown =
+        glfwGetKey(window, GLFW_KEY_EQUAL) == GLFW_PRESS ||
+        glfwGetKey(window, GLFW_KEY_KP_ADD) == GLFW_PRESS;
+    if (detailUpIsDown && !scene.detailUpKeyWasDown)
+        changeDetail(scene, true);
+    scene.detailUpKeyWasDown = detailUpIsDown;
+
+    const bool detailDownIsDown =
+        glfwGetKey(window, GLFW_KEY_MINUS) == GLFW_PRESS ||
+        glfwGetKey(window, GLFW_KEY_KP_SUBTRACT) == GLFW_PRESS;
+    if (detailDownIsDown && !scene.detailDownKeyWasDown)
+        changeDetail(scene, false);
+    scene.detailDownKeyWasDown = detailDownIsDown;
 }
 
 static void startClock(FrameClock& clock)
@@ -517,8 +1077,13 @@ static void updateScene(
     // resizes instead of moving or turning. A pulsing factor between
     // PULSE_MIN and PULSE_MAX, applied equally on x and y, keeps the
     // triangle's proportions correct while it grows and shrinks.
+    // The 0.5f here is a MIDPOINT: halfway between PULSE_MIN and PULSE_MAX.
+    // It read 0.1f from Phase 12 until Phase 19, which made the midpoint 0.18
+    // instead of 0.9, so the factor swung from -0.22 to +0.58 - the triangle
+    // was under half its intended size, collapsed to a point twice per period,
+    // and came back inside out. See the Stage A review, finding F1.
     const float scalePulseMid =
-        (TriangleScale::PULSE_MIN + TriangleScale::PULSE_MAX) * 0.1f;
+        (TriangleScale::PULSE_MIN + TriangleScale::PULSE_MAX) * 0.5f;
     const float scalePulseAmp =
         (TriangleScale::PULSE_MAX - TriangleScale::PULSE_MIN) * 0.5f;
     const float scaleFactor =
@@ -557,22 +1122,52 @@ static void updateScene(
         glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, DepthTestConfig::FAR_COPY_Z_OFFSET));
     scene.farCopyModel = farCopyShift * scene.triangleModel;
 
-    // Phase 9: the quad's matrix is a single, unmoving translation.
-    scene.quadModel = glm::translate(glm::mat4(1.0f), QuadConfig::POSITION);
+    // Phase 9: the quad's matrix is a single, unmoving translation. Phase 17:
+    // that is all it is - no glm::scale here, for the same reason as the
+    // cubes' frames. QuadConfig::SIZE is applied in renderScene().
+    scene.quadFrame = glm::translate(glm::mat4(1.0f), QuadConfig::POSITION);
 
-    // Phase 10: the cube's matrix is T * R, the same pattern Phase 5
+    // Phase 18: the grid does not move either. Like the quad's, its frame is a
+    // single translation, with no glm::scale in it.
+    scene.gridFrame = glm::translate(glm::mat4(1.0f), GridConfig::POSITION);
+
+    // Phase 20: the cylinder does not move either - another plain translation,
+    // with no glm::scale stored in it.
+    scene.cylinderFrame = glm::translate(glm::mat4(1.0f), CylinderConfig::POSITION);
+
+    // Phase 22: the sphere does not move either.
+    scene.sphereFrame = glm::translate(glm::mat4(1.0f), SphereConfig::POSITION);
+
+    // Phase 10: each cube's matrix is T * R, the same pattern Phase 5
     // introduced: spin the cube around its own centre first (the origin,
     // where every one of its 24 vertices is measured from), THEN carry the
     // already-turning cube out to its resting place. Doing it the other way
-    // round would make the cube orbit CubeConfig::POSITION instead of
-    // spinning on the spot - exactly Phase 5's wobble lesson, at a larger
-    // scale.
+    // round would make the cube orbit its position instead of spinning on the
+    // spot - exactly Phase 5's wobble lesson, at a larger scale.
+    //
+    // Phase 16: the spin is worked out ONCE and shared by all three cubes, so
+    // they turn in perfect step. That is deliberate: it leaves the scale as
+    // the only thing that differs between them besides where they stand, which
+    // is exactly what this phase is trying to show.
     const float cubeSpinAngle = CubeConfig::SPIN_SPEED * now;
     const glm::mat4 cubeSpin =
         glm::rotate(glm::mat4(1.0f), cubeSpinAngle, CubeConfig::SPIN_AXIS);
-    const glm::mat4 cubeSlide =
-        glm::translate(glm::mat4(1.0f), CubeConfig::POSITION);
-    scene.cubeModel = cubeSlide * cubeSpin;
+
+    // Phase 16: note what is NOT here - there is no glm::scale in this loop.
+    // A frame is a place and a rotation, nothing more. CubeConfig::SCALES is
+    // never read in updateScene() at all; it is read once, in renderScene(),
+    // at the moment of drawing.
+    for (int i = 0; i < CubeConfig::COUNT; ++i) {
+        const glm::mat4 cubeSlide =
+            glm::translate(glm::mat4(1.0f), CubeConfig::POSITIONS[i]);
+        scene.cubeFrames[i] = cubeSlide * cubeSpin;
+    }
+
+    // Phase 23: the smooth cube uses the SAME cubeSpin as the flat ones. Two
+    // cubes turning identically, differing only in how their normals were
+    // decided, is what makes the comparison fair.
+    scene.smoothCubeFrame =
+        glm::translate(glm::mat4(1.0f), SmoothCubeConfig::POSITION) * cubeSpin;
 
     // Phase 7: glm::lookAt(eye, target, up) builds the view matrix from three
     // vectors instead of a translate/rotate/scale recipe. It re-measures every
@@ -607,15 +1202,64 @@ static void updateScene(
 // Mesh::upload(), and each Mesh frees itself in Mesh::destroy(), so the
 // three destroy functions have no work left to do at all.
 //
-// The triangle and the quad still carry their vertices written out by hand,
-// exactly as Phases 2 and 9 wrote them. Only the cube is GENERATED, because
-// the plan gives it makeCube() in this phase; makeQuad() and the rest of the
-// generators arrive in Phases 17-22.
-static bool createMeshes(Mesh& triangleMesh, Mesh& quadMesh, Mesh& cubeMesh)
+// Only the triangle still carries its vertices written out by hand, exactly as
+// Phase 2 wrote them. The cube (Phase 14), the quad (Phase 17), and the grid
+// (Phase 18) are GENERATED; makeCylinder and makeSphere arrive in Phases 20-22.
+// Phase 25: builds the three meshes whose geometry depends on a detail value,
+// and ONLY those three. The triangle, quad, cube and smooth cube are always the
+// same handful of vertices, so there would be nothing to rebuild.
+//
+// This is safe to call over and over. Mesh::upload() calls destroy() before it
+// uploads anything, so the previous VAO, VBO and EBO are handed back to the
+// driver first and the three handles are replaced rather than added to. That one
+// line in src/Mesh.h is the whole reason this phase does not leak: without it,
+// every press of '+' would abandon three GPU buffers that nothing could ever
+// free again.
+//
+// createMeshes() calls this for the startup build too, so the upload arguments
+// for these three meshes are written in exactly one place. A second copy inside
+// createMeshes() would be free to drift out of step with this one.
+static bool rebuildMeshes(Mesh& gridMesh,
+                          Mesh& cylinderMesh,
+                          Mesh& sphereMesh,
+                          const MeshDetail& detail)
 {
-    // Mesh::upload takes std::vector, and these config arrays are fixed-size
-    // C arrays, so each one is copied into a vector by naming its first
-    // element and one-past-its-last. The copy happens once, at startup.
+    // Phase 18: the grid is the first mesh whose SIZE in memory depends on a
+    // number we choose. Everything about it - 81 vertices and 128 triangles at
+    // CELLS = 8 - comes out of that one value.
+    if (!makeGrid(gridMesh, detail.cells, GridConfig::CORNER_COLORS))
+        return false;
+
+    // Phase 20: the first curved surface. Its ring of vertices comes from
+    // sinf/cosf, and every one of them carries its own analytic normal.
+    if (!makeCylinder(cylinderMesh,
+                      detail.segments,
+                      CylinderConfig::BOTTOM_COLOR,
+                      CylinderConfig::TOP_COLOR))
+        return false;
+
+    // Phase 22: the first TWO-parameter shape. Its normal is the simplest in the
+    // project - for a ball centred on its own origin, normalize(position) IS the
+    // surface normal.
+    return makeSphere(sphereMesh,
+                      detail.stacks,
+                      detail.slices,
+                      SphereConfig::BOTTOM_COLOR,
+                      SphereConfig::TOP_COLOR);
+}
+
+static bool createMeshes(Mesh& triangleMesh,
+                         Mesh& quadMesh,
+                         Mesh& gridMesh,
+                         Mesh& cylinderMesh,
+                         Mesh& sphereMesh,
+                         Mesh& cubeMesh,
+                         Mesh& smoothCubeMesh,
+                         const MeshDetail& detail)
+{
+    // Mesh::upload takes std::vector, and the triangle's config arrays are
+    // fixed-size C arrays, so each one is copied into a vector by naming its
+    // first element and one-past-its-last. The copy happens once, at startup.
     const std::vector<Vertex> triangleVertices(
         TriangleConfig::VERTICES,
         TriangleConfig::VERTICES + TriangleConfig::VERTEX_COUNT);
@@ -626,29 +1270,78 @@ static bool createMeshes(Mesh& triangleMesh, Mesh& quadMesh, Mesh& cubeMesh)
     if (!triangleMesh.upload("triangle", triangleVertices, triangleIndices))
         return false;
 
-    const std::vector<Vertex> quadVertices(
-        QuadConfig::VERTICES,
-        QuadConfig::VERTICES + QuadConfig::VERTEX_COUNT);
-    const std::vector<unsigned int> quadIndices(
-        QuadConfig::INDICES,
-        QuadConfig::INDICES + QuadConfig::INDEX_COUNT);
+    // Phase 17: the quad's 4 vertices and 6 indices are built in src/Mesh.h,
+    // as a 1 x 1 unit quad facing +Z, instead of being typed out here.
+    if (!makeQuad(quadMesh, QuadConfig::CORNER_COLORS))
+        return false;
 
-    if (!quadMesh.upload("quad", quadVertices, quadIndices))
+    // Phase 25: the three parameterised meshes are built by the same function
+    // that '+' and '-' call later, so startup and every rebuild go down one path.
+    if (!rebuildMeshes(gridMesh, cylinderMesh, sphereMesh, detail))
         return false;
 
     // The cube's 24 vertices and 36 indices are built by a loop in
     // src/Mesh.h instead of typed out here. makeCube() produces the same
     // numbers, in the same order, that Phase 10 wrote by hand.
-    return makeCube(cubeMesh, CubeConfig::HALF_SIZE, CubeConfig::FACE_COLORS);
+    if (!makeCube(cubeMesh, CubeConfig::FACE_COLORS))
+        return false;
+
+    // Phase 23: the same cube shape from 8 shared corners instead of 24 separate
+    // ones, with its normals AVERAGED rather than written down. Same 12 triangles,
+    // a third of the vertices, and a completely different look in the 'N' view.
+    return makeSmoothCube(smoothCubeMesh,
+                          SmoothCubeConfig::BOTTOM_COLOR,
+                          SmoothCubeConfig::TOP_COLOR);
+}
+
+// Phase 16: draws one mesh, with one model matrix and one tint. Everything a
+// single object needs is now in one call, and the per-object uniforms live in
+// exactly one place instead of being repeated above every draw.
+//
+// The `model` argument is where the unit-mesh rule is actually enforced. A
+// caller that wants a cube three units wide does not ask for a bigger mesh; it
+// hands in a matrix with a glm::scale in it:
+//
+//     drawMesh(shader, stats, cubeMesh, frame * glm::scale(glm::mat4(1.0f), glm::vec3(3.0f)), tint);
+//
+// Note that the scale sits on the RIGHT of the frame, so (reading right to
+// left, Phase 6) the mesh is resized FIRST, about its own origin, and only
+// then placed and turned by the frame. A scale written on the left would
+// resize the finished placement instead, stretching how far the object sits
+// from the origin - Phase 6's smear, in three dimensions.
+//
+// This signature grows into the reference project's drawMesh(mesh, model,
+// material) once Phase 29 replaces the tint with a real material.
+static void drawMesh(ShaderProgram& shader,
+                     RenderStats& stats,
+                     const Mesh& mesh,
+                     const glm::mat4& model,
+                     const glm::vec3& tint)
+{
+    shader.setVec3("uTint", tint);
+    shader.setMat4("uModel", model);
+    mesh.draw();
+
+    // Phase 24: counted HERE, at the one place every draw in the project passes
+    // through, so the totals cannot get out of step with what was drawn.
+    ++stats.drawCalls;
+    stats.vertices += mesh.vertexCount();
+    stats.triangles += mesh.triangleCount();
 }
 
 // The shader is no longer passed as const: setting a uniform changes the
 // shader program, so this function can no longer promise to leave it alone.
-static void renderScene(
+// Phase 24: this now RETURNS what it drew. The counters are a local, built up
+// from zero every frame, so a stale total from a previous frame is impossible.
+static RenderStats renderScene(
     ShaderProgram& shader,
     const Mesh& triangleMesh,
     const Mesh& quadMesh,
+    const Mesh& gridMesh,
+    const Mesh& cylinderMesh,
+    const Mesh& sphereMesh,
     const Mesh& cubeMesh,
+    const Mesh& smoothCubeMesh,
     const SceneState& scene)
 {
     glClearColor(
@@ -699,44 +1392,154 @@ static void renderScene(
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     }
 
-    // Phase 14: every draw below now reads the same three lines - set the
-    // tint, set the model matrix, tell the mesh to draw itself. Binding the
-    // right VAO, knowing whether to call glDrawArrays or glDrawElements, and
-    // knowing how many indices there are have all moved inside Mesh::draw().
-    // This function is left saying only what is different about each object.
+    // Phase 16: every draw below is now a single drawMesh() call. Phase 14
+    // moved "which VAO, which draw call, how many indices" into the mesh;
+    // this phase moves "which matrix, which tint" into one function too, so a
+    // draw reads as one line that says what is different about this object.
+    const glm::vec3 NO_TINT(1.0f, 1.0f, 1.0f);
 
-    // Draw 1: the near copy of the triangle, drawn FIRST.
-    shader.setVec3("uTint", AppConfig::TINT);
-    shader.setMat4("uModel", scene.triangleModel);
-    triangleMesh.draw();
+    // Phase 24: zeroed every frame, filled in by drawMesh, returned below.
+    RenderStats stats;
 
-    // Draw 2: the SAME mesh again, at DepthTestConfig::FAR_COPY_Z_OFFSET
-    // farther away, drawn SECOND. Nothing here is duplicated except the draw
+    // Draw 1: the grid, drawn BEFORE everything else, on purpose.
+    //
+    // With depth testing on, draw order makes no difference (Phase 8), so this
+    // choice only matters when 'D' switches it off. The grid is by far the
+    // largest thing on screen; drawn last with depth off it would simply paint
+    // over the two triangles and wreck Phase 8's demonstration. Drawn first,
+    // the triangles still land on top of it and that demonstration is
+    // untouched. An earlier phase's evidence must keep working.
+    //
+    // The y factor of the scale is 1, not SIZE: the grid is flat in y, exactly
+    // as the quad is flat in z, so there is no depth to scale.
+    const glm::mat4 gridScale = glm::scale(
+        glm::mat4(1.0f), glm::vec3(GridConfig::SIZE, 1.0f, GridConfig::SIZE));
+    drawMesh(shader, stats, gridMesh, scene.gridFrame * gridScale, NO_TINT);
+
+    // Draw 2: the near copy of the triangle. Drawn BEFORE the far copy below,
+    // which is what Phase 8's demonstration depends on.
+    drawMesh(shader, stats, triangleMesh, scene.triangleModel, AppConfig::TINT);
+
+    // Draw 3: the SAME mesh again, at DepthTestConfig::FAR_COPY_Z_OFFSET
+    // farther away, drawn AFTER the near copy. Nothing here is duplicated except the draw
     // call itself: same mesh, same vertex data, just a different uModel and
-    // uTint. Drawing the farther copy LAST is deliberate - with depth testing
-    // off, its "wrong" pixels are the ones that end up on screen, which is
-    // exactly what makes GL_DEPTH_TEST worth having.
-    shader.setVec3("uTint", DepthTestConfig::FAR_COPY_TINT);
-    shader.setMat4("uModel", scene.farCopyModel);
-    triangleMesh.draw();
+    // uTint. Drawing the farther copy AFTER the nearer one is deliberate -
+    // with depth testing off, its "wrong" pixels are the ones that end up on
+    // screen, which is exactly what makes GL_DEPTH_TEST worth having.
+    drawMesh(shader, stats, triangleMesh, scene.farCopyModel, DepthTestConfig::FAR_COPY_TINT);
 
-    // Draw 3: the quad.
+    // Draw 4: the quad.
     //
-    // uTint is (1, 1, 1) here on purpose: this quad's four corners already
-    // carry their own distinct colours (Phase 2's idea), so the tint should
-    // leave them alone rather than filtering them the way Phase 3 does for
-    // the triangle.
-    shader.setVec3("uTint", glm::vec3(1.0f, 1.0f, 1.0f));
-    shader.setMat4("uModel", scene.quadModel);
-    quadMesh.draw();
+    // NO_TINT is (1, 1, 1) on purpose: this quad's four corners already carry
+    // their own distinct colours (Phase 2's idea), so the tint should leave
+    // them alone rather than filtering them the way Phase 3 does for the
+    // triangle.
+    //
+    // Phase 17: the quad is a unit mesh now, so its size is applied here, at
+    // draw time, exactly as the cubes' sizes are. The z factor is 1, not
+    // SIZE: a quad has no depth to scale, and 1 leaves it flat.
+    const glm::mat4 quadScale = glm::scale(
+        glm::mat4(1.0f), glm::vec3(QuadConfig::SIZE, QuadConfig::SIZE, 1.0f));
+    drawMesh(shader, stats, quadMesh, scene.quadFrame * quadScale, NO_TINT);
 
-    // Draw 4: the cube.
+    // Draws 5, 6, and 7: THREE cubes, from ONE mesh and ONE VAO.
     //
-    // uTint stays (1, 1, 1): each of the cube's 24 vertices already carries
-    // its own face colour, so nothing should filter it.
-    shader.setVec3("uTint", glm::vec3(1.0f, 1.0f, 1.0f));
-    shader.setMat4("uModel", scene.cubeModel);
-    cubeMesh.draw();
+    // This loop is the whole of Phase 16. `cubeMesh` is uploaded once, at
+    // startup, and holds a single 1 x 1 x 1 cube. Each pass through this loop
+    // multiplies that cube's unscaled frame by a different glm::scale and
+    // hands the result to drawMesh. Nothing about the mesh changes between
+    // passes - no re-upload, no second VAO, not one byte of vertex data
+    // touched - and three cubes of three different sizes appear.
+    //
+    // Read the product right to left, as always (Phase 6):
+    //   1. glm::scale - resize the unit cube about its own origin;
+    //   2. the frame   - spin it, then carry it to its place.
+    //
+    // The scale is applied HERE, in the draw call, and nowhere else. It is
+    // never stored back into scene.cubeFrames, so it can never be inherited by
+    // anything - which is the habit Stage D's ship hierarchy depends on
+    // completely.
+    //
+    // NO_TINT again: each of the cube's 24 vertices already carries its own
+    // face colour, so nothing should filter it.
+    for (int i = 0; i < CubeConfig::COUNT; ++i) {
+        const glm::mat4 cubeScale = glm::scale(
+            glm::mat4(1.0f), glm::vec3(CubeConfig::SCALES[i]));
+        drawMesh(shader, stats, cubeMesh, scene.cubeFrames[i] * cubeScale, NO_TINT);
+    }
+
+    // Draw 8: the cylinder - side wall and both caps, one mesh, one draw call.
+    //
+    // The scale is (DIAMETER, HEIGHT, DIAMETER): the unit tube is 1 across and
+    // 1 tall, so the two across-axes take the diameter and the up-axis takes the
+    // height. Compare the quad's (SIZE, SIZE, 1) and the grid's (SIZE, 1, SIZE):
+    // in each case the mesh's own flat or round directions decide which of the
+    // three factors is which, and getting it wrong makes a tube into a disc.
+    //
+    // Drawn last, which is safe here: it stands alone on the left and overlaps
+    // nothing else on screen, so even with depth testing off (the 'D' key) there
+    // is nothing for it to paint over. The grid is the draw whose order really
+    // matters - see Draw 1.
+    const glm::mat4 cylinderScale = glm::scale(
+        glm::mat4(1.0f),
+        glm::vec3(CylinderConfig::DIAMETER, CylinderConfig::HEIGHT, CylinderConfig::DIAMETER));
+    drawMesh(shader, stats, cylinderMesh, scene.cylinderFrame * cylinderScale, NO_TINT);
+
+    // Draw 9: the sphere.
+    //
+    // The only scale in the project where all three factors are the same, because
+    // a ball is round on every axis. Each mesh's own shape decides which factor
+    // goes where, and this is the simplest case of that rule.
+    const glm::mat4 sphereScale = glm::scale(
+        glm::mat4(1.0f), glm::vec3(SphereConfig::DIAMETER));
+    drawMesh(shader, stats, sphereMesh, scene.sphereFrame * sphereScale, NO_TINT);
+
+    // Draw 10: the smooth cube, the same size as flat cube 1 and just above it.
+    //
+    // Press 'N' and compare the two directly: the flat cube shows six hard,
+    // unchanging face colours, and this one shows each face blending between its
+    // four corners. Identical geometry, identical rotation, identical scale - the
+    // only difference is whether each face got its own vertices.
+    const glm::mat4 smoothCubeScale = glm::scale(
+        glm::mat4(1.0f), glm::vec3(SmoothCubeConfig::SCALE));
+    drawMesh(shader, stats, smoothCubeMesh, scene.smoothCubeFrame * smoothCubeScale, NO_TINT);
+
+    return stats;
+}
+
+// Phase 24: put the frame's measured cost in the window title.
+//
+// The title bar is a free HUD: no font, no texture, no extra geometry, no second
+// shader - and it shows up in a screen recording, which a console window does
+// not. The whole mechanism is snprintf into a buffer and one GLFW call.
+//
+// It is only rewritten when a number actually CHANGES. glfwSetWindowTitle goes
+// through to the operating system, and asking Windows to re-set the same string
+// 120 times a second is pure waste. In this scene the geometry is fixed, so the
+// title is written once and then left alone; Phase 25's '+' and '-' keys are what
+// will make it visibly move.
+static void updateWindowTitle(GLFWwindow* window,
+                              const RenderStats& stats,
+                              RenderStats& lastShown)
+{
+    if (stats.drawCalls == lastShown.drawCalls &&
+        stats.vertices == lastShown.vertices &&
+        stats.triangles == lastShown.triangles) {
+        return;
+    }
+
+    char title[256];
+    std::snprintf(title, sizeof(title),
+                  "%s | draws %d | tris %d | verts %d",
+                  AppConfig::WINDOW_TITLE, stats.drawCalls, stats.triangles, stats.vertices);
+    glfwSetWindowTitle(window, title);
+
+    // Also print it once, so the numbers are in the console log of a recording
+    // even if the title bar is cropped out of shot.
+    std::printf("[counters] draw calls %d, triangles %d, vertices submitted %d\n",
+                stats.drawCalls, stats.triangles, stats.vertices);
+
+    lastShown = stats;
 }
 
 static void reportFrame(FrameStats& stats, const FrameClock& clock)
@@ -838,17 +1641,31 @@ int main()
         return 1;
     }
 
-    // Phase 14: three Mesh objects replace three structs of raw handles and
-    // three create/destroy pairs. Each one owns its own VAO, VBO, and EBO.
-    // They are declared here, before the loop, so they live for as long as
-    // the window does.
+    // Phase 25: declared before the meshes now, because the detail values it
+    // holds decide how much geometry the first build produces. Its mouse
+    // callbacks are still wired up further down, once the meshes are known to
+    // have worked.
+    SceneState scene;
+
+    // Phase 14: Mesh objects replace structs of raw handles and create/destroy
+    // pairs. Each one owns its own VAO, VBO, and EBO. They are declared here,
+    // before the loop, so they live for as long as the window does.
     Mesh triangleMesh;
     Mesh quadMesh;
+    Mesh gridMesh;
+    Mesh cylinderMesh;
+    Mesh sphereMesh;
     Mesh cubeMesh;
+    Mesh smoothCubeMesh;
 
-    if (!createMeshes(triangleMesh, quadMesh, cubeMesh)) {
+    if (!createMeshes(triangleMesh, quadMesh, gridMesh, cylinderMesh, sphereMesh,
+                      cubeMesh, smoothCubeMesh, scene.detail)) {
         std::fprintf(stderr, "Failed to create the scene meshes.\n");
+        smoothCubeMesh.destroy();
         cubeMesh.destroy();
+        sphereMesh.destroy();
+        cylinderMesh.destroy();
+        gridMesh.destroy();
         quadMesh.destroy();
         triangleMesh.destroy();
         shader.destroy();
@@ -857,9 +1674,7 @@ int main()
         return 1;
     }
 
-    std::printf("Phase 15 ready. Drag with the left mouse button to orbit, scroll to zoom. Press N for the normals debug view, W for wireframe, D to toggle depth test, O to compare transform order. Press ESC to close.\n");
-
-    SceneState scene;
+    std::printf("Phase 25 ready. Press '+' and '-' to rebuild the grid, cylinder and sphere at a different level of detail, and hold W to watch the polygon count change. The window title reports what each frame costs. Drag the mouse UP to look down on the grid. Drag with the left mouse button to orbit, scroll to zoom. Press N for the normals debug view, W for wireframe, D to toggle depth test, O to compare transform order. Press ESC to close.\n");
 
     // Phase 13: give the two mouse callbacks in src/Camera.h a way to reach
     // this camera. GLFW's callbacks are plain C function pointers - they
@@ -882,9 +1697,30 @@ int main()
     FrameStats stats;
     stats.reportStartTime = clock.now;
 
+    // Phase 24: what the title bar is currently showing. Starting it at -1 forces
+    // the first frame to write the title, whatever the real counts turn out to be.
+    RenderStats lastShownStats;
+    lastShownStats.drawCalls = -1;
+
     while (glfwWindowShouldClose(window) == GLFW_FALSE) {
         updateClock(clock);
         processInput(window, scene);
+
+        // Phase 25: rebuild here, between reading input and using the meshes.
+        // Doing it in processInput() would mean the key handler owned GPU
+        // objects; doing it after renderScene() would draw one frame at the old
+        // detail after the new detail was announced.
+        //
+        // A failed rebuild leaves the meshes empty, so there is nothing sensible
+        // to draw and the loop ends. The cleanup below still runs, because this
+        // breaks out of the loop rather than returning.
+        if (scene.detail.needsRebuild) {
+            if (!rebuildMeshes(gridMesh, cylinderMesh, sphereMesh, scene.detail)) {
+                std::fprintf(stderr, "Failed to rebuild the scene meshes.\n");
+                break;
+            }
+            scene.detail.needsRebuild = false;
+        }
 
         // Phase 7: read the CURRENT framebuffer size every frame, not just
         // once at startup, so uProjection keeps a correct aspect ratio if the
@@ -892,7 +1728,13 @@ int main()
         glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
 
         updateScene(scene, clock.now, clock.deltaTime, framebufferWidth, framebufferHeight);
-        renderScene(shader, triangleMesh, quadMesh, cubeMesh, scene);
+        // Named frameCost, not stats: main already has a FrameStats called
+        // 'stats' for the timing report, and shadowing it here would quietly
+        // hand the wrong one to reportFrame() below.
+        const RenderStats frameCost =
+            renderScene(shader, triangleMesh, quadMesh, gridMesh, cylinderMesh, sphereMesh,
+                        cubeMesh, smoothCubeMesh, scene);
+        updateWindowTitle(window, frameCost, lastShownStats);
 
         glfwSwapBuffers(window);
         glfwPollEvents();
@@ -909,7 +1751,11 @@ int main()
     // the right moment and leaves every handle at 0, so the later destructor
     // finds nothing to do. This is the same arrangement ShaderProgram has
     // used since Phase 2.
+    smoothCubeMesh.destroy();
     cubeMesh.destroy();
+    sphereMesh.destroy();
+    cylinderMesh.destroy();
+    gridMesh.destroy();
     quadMesh.destroy();
     triangleMesh.destroy();
     shader.destroy();

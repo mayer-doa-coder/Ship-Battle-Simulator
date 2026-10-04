@@ -19,6 +19,7 @@
 
 #include <glm/glm.hpp>
 
+#include <cmath>
 #include <cstddef>
 #include <cstdio>
 #include <vector>
@@ -163,7 +164,7 @@ public:
             return false;
         }
 
-        std::printf("[mesh] %-8s vertices=%d indices=%d triangles=%d\n",
+        std::printf("[mesh] %-10s vertices=%d indices=%d triangles=%d\n",
                     name,
                     m_vertexCount,
                     m_indexCount,
@@ -236,19 +237,42 @@ private:
 // ---- Generators ---------------------------------------------------------
 //
 // A generator writes out a shape's vertices and indices with a loop instead
-// of by hand. makeCube is the first; makeQuad, makeGrid, makeCylinder, and
-// makeSphere follow in Phases 17-22.
-
-// Builds the cube's 24 vertices and 36 indices on the CPU, without touching
-// OpenGL at all. Keeping this separate from the upload means the numbers can
-// be checked, printed, or modified before they ever reach the GPU - which is
-// exactly what Phase 23's computeSmoothNormals() will need to do.
+// of by hand. makeCube is the first; makeQuad is the second (Phase 17);
+// makeGrid is the third and the first PARAMETERISED one (Phase 18);
+// makeCylinder is the fourth and the first CURVED one (Phase 20, side wall;
+// Phase 21 closed it with end caps); makeSphere is the fifth and the first
+// TWO-parameter one (Phase 22). Those five are every shape the project needs.
 //
-// 'halfSize' is how far each face sits from the centre, so the cube is
-// 2 * halfSize across. 'faceColors' holds one colour per face, in the same
-// order the faces are listed below.
-inline void buildCubeGeometry(float halfSize,
-                              const glm::vec3 faceColors[6],
+// Phase 23 adds no sixth shape. It adds computeSmoothNormals() - a second WAY of
+// deciding a normal - and one more cube to demonstrate it on.
+//
+// Phase 16 - THE UNIT-MESH RULE. Every generator from here on produces a
+// shape of size 1, centred on its own origin, and takes NO size parameter at
+// all. An object's real size is decided by a glm::scale in its model matrix,
+// at the moment it is drawn.
+//
+// The reason is not tidiness, it is reuse. A mesh is a block of memory on the
+// graphics card; a matrix is sixteen numbers sent with a draw call. If size
+// lived in the vertex data, every differently sized object would need its own
+// upload. Because size lives in the matrix instead, ONE cube on the GPU can
+// be drawn at any size, any number of times, in the same frame.
+//
+// Phase 14 still passed a halfSize into makeCube. Phase 16 takes it away,
+// which is the whole point of this phase.
+
+// How far a unit mesh reaches from its own origin along each axis. 0.5 each
+// way makes the shape exactly 1 unit across, so a scale of 3 in the model
+// matrix means "3 units across" with no arithmetic in between.
+constexpr float UNIT_HALF_EXTENT = 0.5f;
+
+// Builds the unit cube's 24 vertices and 36 indices on the CPU, without
+// touching OpenGL at all. Keeping this separate from the upload means the
+// numbers can be checked, printed, or modified before they ever reach the GPU
+// - which is exactly what Phase 23's computeSmoothNormals() will need to do.
+//
+// There is no size parameter: the cube is always 1 x 1 x 1. 'faceColors'
+// holds one colour per face, in the same order the faces are listed below.
+inline void buildCubeGeometry(const glm::vec3 faceColors[6],
                               std::vector<Vertex>& vertices,
                               std::vector<unsigned int>& indices)
 {
@@ -287,12 +311,13 @@ inline void buildCubeGeometry(float halfSize,
         const Face& face = faces[f];
 
         // The four corners, walked counter-clockwise from the bottom-left.
-        // Starting at the face's centre (normal * halfSize) and stepping
-        // half a face width along `right` and `up` lands exactly on a corner,
-        // because the three directions are perpendicular and unit length.
-        const glm::vec3 centre = face.normal * halfSize;
-        const glm::vec3 across = face.right * halfSize;
-        const glm::vec3 upward = face.up * halfSize;
+        // Starting at the face's centre (normal * UNIT_HALF_EXTENT) and
+        // stepping half a face width along `right` and `up` lands exactly on a
+        // corner, because the three directions are perpendicular and unit
+        // length.
+        const glm::vec3 centre = face.normal * UNIT_HALF_EXTENT;
+        const glm::vec3 across = face.right * UNIT_HALF_EXTENT;
+        const glm::vec3 upward = face.up * UNIT_HALF_EXTENT;
 
         const glm::vec3 corners[4] = {
             centre - across - upward,   // bottom-left
@@ -321,11 +346,728 @@ inline void buildCubeGeometry(float halfSize,
     }
 }
 
-// Builds the cube and uploads it. This is the call main() makes.
-inline bool makeCube(Mesh& mesh, float halfSize, const glm::vec3 faceColors[6])
+// Builds the unit cube and uploads it. This is the call main() makes, exactly
+// once, however many cubes end up on screen.
+inline bool makeCube(Mesh& mesh, const glm::vec3 faceColors[6])
 {
     std::vector<Vertex> vertices;
     std::vector<unsigned int> indices;
-    buildCubeGeometry(halfSize, faceColors, vertices, indices);
+    buildCubeGeometry(faceColors, vertices, indices);
     return mesh.upload("cube", vertices, indices);
+}
+
+// Phase 17: the simplest generator there is - four vertices, six indices, one
+// flat surface. It exists to show the generator recipe with nothing else in
+// the way: no loop over faces, no table of directions, just the four corners.
+//
+// Like the cube it follows the unit-mesh rule (Phase 16): it takes no size,
+// and the quad is always 1 x 1, centred on its own origin, lying in the XY
+// plane. A quad's real size is a glm::scale in its model matrix.
+//
+// A quad has no thickness, so "1 x 1" is its width and height; its depth is
+// exactly 0. The scale to use is therefore (width, height, 1) - the 1 on z
+// leaves the flat quad flat, and scaling zero by anything is still zero.
+//
+// Which way it faces: every corner's normal is (0, 0, 1), straight out of the
+// screen along +Z. The winding has to AGREE with that normal - the corners
+// must run counter-clockwise as seen from +Z - or GL_CULL_FACE would throw the
+// quad away when viewed from the front and keep it when viewed from behind.
+// Both facts are written down once, here, and Phase 17's checkpoint is that
+// the Phase 15 normals view confirms the first one on screen.
+//
+// 'cornerColors' holds one colour per corner, in the order the corners are
+// listed below: bottom-left, bottom-right, top-right, top-left.
+inline void buildQuadGeometry(const glm::vec3 cornerColors[4],
+                              std::vector<Vertex>& vertices,
+                              std::vector<unsigned int>& indices)
+{
+    const glm::vec3 normal(0.0f, 0.0f, 1.0f);
+
+    // The four corners, walked counter-clockwise (as seen from +Z) from the
+    // bottom-left - the same walk the cube uses for each of its faces.
+    const glm::vec3 corners[4] = {
+        { -UNIT_HALF_EXTENT, -UNIT_HALF_EXTENT, 0.0f },   // 0: bottom-left
+        {  UNIT_HALF_EXTENT, -UNIT_HALF_EXTENT, 0.0f },   // 1: bottom-right
+        {  UNIT_HALF_EXTENT,  UNIT_HALF_EXTENT, 0.0f },   // 2: top-right
+        { -UNIT_HALF_EXTENT,  UNIT_HALF_EXTENT, 0.0f },   // 3: top-left
+    };
+
+    vertices.clear();
+    indices.clear();
+    vertices.reserve(4);
+    indices.reserve(6);
+
+    for (int c = 0; c < 4; ++c)
+        vertices.push_back({ corners[c], normal, cornerColors[c] });
+
+    // Two triangles sharing the diagonal from corner 1 (bottom-right) to
+    // corner 3 (top-left). Corners 1 and 3 are each stored once but used
+    // twice - Phase 9's indexed-drawing idea, unchanged.
+    //
+    // This is NOT the cube's {0,1,2, 2,3,0} pattern, which would cut the quad
+    // along the OTHER diagonal (corner 0 to corner 2). Cutting it the other
+    // way changes how the four corner colours blend across the surface, and
+    // the quad has looked the same way since Phase 9; keeping its diagonal
+    // keeps its picture. Both triangles are counter-clockwise from +Z:
+    //   (0, 1, 3)  bottom-left,  bottom-right, top-left
+    //   (1, 2, 3)  bottom-right, top-right,    top-left
+    indices.push_back(0);
+    indices.push_back(1);
+    indices.push_back(3);
+    indices.push_back(1);
+    indices.push_back(2);
+    indices.push_back(3);
+}
+
+// Builds the unit quad and uploads it. This is the call main() makes.
+inline bool makeQuad(Mesh& mesh, const glm::vec3 cornerColors[4])
+{
+    std::vector<Vertex> vertices;
+    std::vector<unsigned int> indices;
+    buildQuadGeometry(cornerColors, vertices, indices);
+    return mesh.upload("quad", vertices, indices);
+}
+
+// Phase 18: the first PARAMETERISED generator.
+//
+// makeCube and makeQuad always produce the same amount of geometry: 24
+// vertices and 4 vertices, every time. makeGrid is handed a number and builds
+// a different amount depending on it, which is what "parameterised" means.
+//
+// 'cells' is the plan's N: how many quads fit along each side of the grid. So
+// the grid is cells x cells quads, and that decides everything else:
+//
+//     vertices  = (cells + 1) * (cells + 1)
+//     triangles = 2 * cells * cells
+//     indices   = 6 * cells * cells
+//
+// The "+ 1" is the fence-post count: a side cut into 4 pieces has 5 posts
+// along it. Those three formulas are worth being able to recite, because
+// Phase 19's checkpoint is to work the triangle count out by eye and check it.
+//
+// It is still a UNIT mesh (Phase 16): exactly 1 x 1, centred on its own
+// origin, and no size parameter. 'cells' changes how FINELY it is divided, not
+// how big it is - two completely separate ideas that are easy to confuse.
+//
+// It lies in the XZ plane with the normal (0, 1, 0): FLAT AND HORIZONTAL, like
+// a floor, not upright like the quad. That is deliberate and the two are not
+// interchangeable. This mesh becomes the sea in Phase 40, where the wave
+// displaces y from functions of x and z, so its two parameters have to be x
+// and z. Building it upright now would mean rebuilding it then.
+//
+// Why a grid is not just "lots of quads": neighbouring cells SHARE their
+// corner vertices. At cells = 32 a grid holds 33 * 33 = 1089 vertices and
+// 2048 triangles. Four separate vertices per triangle corner would need
+// 2048 * 3 = 6144. Sharing is what indexed drawing (Phase 9) bought, and it is
+// why the sea can be finely divided without the vertex count exploding.
+//
+// 'cornerColors' holds one colour per CORNER OF THE WHOLE GRID, in the same
+// cyclic order makeQuad uses: (-x,-z), (+x,-z), (+x,+z), (-x,+z). Every
+// vertex in between is blended from all four, so the surface reads as one
+// continuous sheet rather than a patchwork.
+inline void buildGridGeometry(int cells,
+                              const glm::vec3 cornerColors[4],
+                              std::vector<Vertex>& vertices,
+                              std::vector<unsigned int>& indices)
+{
+    // One quad is the smallest grid there is. Clamping also avoids dividing by
+    // zero below, which would make every position a NaN and draw nothing at
+    // all. Phase 25 gives this a proper maximum as well, when '+' and '-'
+    // start rebuilding meshes at runtime.
+    if (cells < 1)
+        cells = 1;
+
+    // Every vertex of a flat horizontal surface faces the same way: straight
+    // up. (Phase 41 is where the wave's slope makes this vary per vertex.)
+    const glm::vec3 normal(0.0f, 1.0f, 0.0f);
+
+    const int side = cells + 1;          // vertices along one edge: the fence posts
+    const float step = 1.0f / static_cast<float>(cells);
+
+    vertices.clear();
+    indices.clear();
+    vertices.reserve(static_cast<std::size_t>(side) * static_cast<std::size_t>(side));
+    indices.reserve(static_cast<std::size_t>(cells) * static_cast<std::size_t>(cells) * 6u);
+
+    // ---- the vertices: a (cells + 1) x (cells + 1) lattice, row by row ----
+    //
+    // The outer loop walks z, the inner loop walks x, so vertex (i, j) ends up
+    // at index j * side + i. Knowing that one formula is what makes the index
+    // loop below straightforward.
+    for (int j = 0; j < side; ++j) {
+        const float v = static_cast<float>(j) * step;     // 0 .. 1 across z
+        for (int i = 0; i < side; ++i) {
+            const float u = static_cast<float>(i) * step; // 0 .. 1 across x
+
+            // u and v run 0..1, so subtracting the half extent centres the
+            // grid on its own origin: x and z run -0.5 .. +0.5.
+            const glm::vec3 position(
+                -UNIT_HALF_EXTENT + u,
+                0.0f,
+                -UNIT_HALF_EXTENT + v);
+
+            // Blend all four corner colours - across x first, then across z.
+            // This is one bilinear mix, the same idea as asking "what colour
+            // is this point on a four-cornered sheet?"
+            const glm::vec3 nearEdge = glm::mix(cornerColors[0], cornerColors[1], u);
+            const glm::vec3 farEdge  = glm::mix(cornerColors[3], cornerColors[2], u);
+            const glm::vec3 color    = glm::mix(nearEdge, farEdge, v);
+
+            vertices.push_back({ position, normal, color });
+        }
+    }
+
+    // ---- the indices: two triangles per cell ----
+    //
+    // Each cell is a little quad with four already-uploaded corners:
+    //
+    //     v01 --- v11        v01 = (i,     j + 1)
+    //      |  \    |         v11 = (i + 1, j + 1)
+    //      |    \  |         v00 = (i,     j)
+    //     v00 --- v10        v10 = (i + 1, j)
+    //
+    // Both triangles are wound counter-clockwise AS SEEN FROM ABOVE (+Y),
+    // which is what GL_CULL_FACE needs to keep a surface whose normal points
+    // up (Phases 9 and 11). Walking v00 -> v01 -> v11 turns that way; the
+    // obvious-looking v00 -> v10 -> v11 turns the other way and would make the
+    // whole grid invisible from above and visible only from underneath.
+    for (int j = 0; j < cells; ++j) {
+        for (int i = 0; i < cells; ++i) {
+            const unsigned int v00 = static_cast<unsigned int>(j * side + i);
+            const unsigned int v10 = v00 + 1u;
+            const unsigned int v01 = v00 + static_cast<unsigned int>(side);
+            const unsigned int v11 = v01 + 1u;
+
+            indices.push_back(v00);
+            indices.push_back(v01);
+            indices.push_back(v11);
+
+            indices.push_back(v00);
+            indices.push_back(v11);
+            indices.push_back(v10);
+        }
+    }
+}
+
+// Builds the unit grid and uploads it. This is the call main() makes.
+inline bool makeGrid(Mesh& mesh, int cells, const glm::vec3 cornerColors[4])
+{
+    std::vector<Vertex> vertices;
+    std::vector<unsigned int> indices;
+    buildGridGeometry(cells, cornerColors, vertices, indices);
+    return mesh.upload("grid", vertices, indices);
+}
+
+// The angle all the way round a circle, in radians. Dividing it by the number
+// of segments gives the step from one vertex of a ring to the next.
+constexpr float TWO_PI = 6.28318530717958648f;
+
+// Phase 20: the first CURVED surface, and the project's first mesh whose
+// normals are not all the same.
+//
+// Phase 20 built the SIDE WALL. Phase 21 added the two END CAPS, so this is now
+// a closed solid: a tube you cannot see through from any angle.
+//
+// The three pieces are built from one shared ring of positions but keep separate
+// vertices, because the wall's normals point sideways and each cap's points
+// straight up or down - see the comment on the caps below.
+//
+// Unit-mesh rule (Phase 16): no size parameter. The tube is exactly 1 unit
+// across and 1 unit tall, centred on its own origin, with its AXIS ALONG Y -
+// standing upright like a mast. Its real size is a glm::scale of
+// (diameter, height, diameter) at draw time.
+//
+// 'segments' is how many flat strips the circle is cut into, which is the same
+// kind of value as makeGrid's 'cells': it changes how finely the surface is
+// divided, not how big it is. A circle cut into 6 looks like a hexagon; cut
+// into 64 it looks round. Nothing about it is ever actually curved - every
+// triangle is flat - which is the whole reason Phase 33's Demo B uses a
+// low-segment barrel to show faceting.
+//
+//     wall        2 * segments vertices, 2 * segments triangles
+//     + 2 caps    2 * (1 + segments) vertices, 2 * segments triangles
+//     ---------------------------------------------------------------
+//     vertices  = 4 * segments + 2      =  66 at segments = 16
+//     triangles = 4 * segments          =  64 at segments = 16
+//     indices   = 12 * segments         = 192 at segments = 16
+//
+// Note the "+ 2" is for the two cap centres, and that there is no "+ 1" per
+// ring, unlike makeGrid. A grid's row of posts has two ends, so it needs
+// cells + 1 of them. A ring has no ends - it closes on itself - so segment
+// 'segments - 1' joins straight back to segment 0 with a modulo, and the seam
+// vertices are SHARED rather than duplicated. That works because the normal at
+// angle 0 and at angle 2*pi really are the same direction. (A textured cylinder
+// would have to duplicate the seam, because the texture coordinate there jumps
+// from 1 back to 0. This project has no textures, so sharing is correct and
+// cheaper.)
+inline void buildCylinderGeometry(int segments,
+                                  const glm::vec3& bottomColor,
+                                  const glm::vec3& topColor,
+                                  std::vector<Vertex>& vertices,
+                                  std::vector<unsigned int>& indices)
+{
+    // Two segments would be a flat flap and one would be nothing at all, so
+    // three is the smallest ring that encloses any space. Clamping also keeps
+    // the division below safe. Phase 25 adds a maximum as well.
+    if (segments < 3)
+        segments = 3;
+
+    vertices.clear();
+    indices.clear();
+    vertices.reserve(static_cast<std::size_t>(segments) * 4u + 2u);
+    indices.reserve(static_cast<std::size_t>(segments) * 12u);
+
+    // The ring of (x, z) positions, worked out ONCE and then used three times:
+    // for the wall, for the bottom cap's rim, and for the top cap's rim.
+    //
+    // The three sets of vertices built from it are separate - they have to be,
+    // because they need different normals - but they are built from the SAME
+    // numbers. That is what guarantees a cap's edge lands exactly on the wall's
+    // edge, with no hairline crack between them. Calling sin and cos again for
+    // each would almost certainly give the same answers, but "almost certainly"
+    // is not a good foundation for a seam.
+    std::vector<glm::vec2> ring;
+    ring.reserve(static_cast<std::size_t>(segments));
+    for (int i = 0; i < segments; ++i) {
+        const float angle = TWO_PI * static_cast<float>(i) / static_cast<float>(segments);
+
+        // A point on a circle of radius UNIT_HALF_EXTENT. sin for x and cos for
+        // z means angle 0 starts on the +Z axis and the angle advances toward
+        // +X, which is the direction that makes the windings below come out
+        // facing outward.
+        ring.push_back(glm::vec2(std::sin(angle) * UNIT_HALF_EXTENT,
+                                 std::cos(angle) * UNIT_HALF_EXTENT));
+    }
+
+    // ---- 1. the side wall: two rings, built one segment at a time ----
+    for (int i = 0; i < segments; ++i) {
+        const float x = ring[static_cast<std::size_t>(i)].x;
+        const float z = ring[static_cast<std::size_t>(i)].y;
+
+        // THE ANALYTIC NORMAL. For a cylinder standing on the Y axis the
+        // surface normal points straight out from the axis, so it has no y
+        // component at all: it is just the point's own (x, z) direction, made
+        // unit length.
+        //
+        // "Analytic" means it comes from knowing what the shape IS, rather than
+        // from measuring the triangles that approximate it. It is exactly right
+        // for the smooth cylinder even though the mesh is a ring of flat
+        // strips, and that mismatch is the point: the lighting will behave as
+        // though the surface were truly round. Phase 23's computeSmoothNormals()
+        // is the other approach - averaging the faces that meet at a vertex -
+        // for shapes whose normals cannot simply be written down.
+        //
+        // Both vertices of this segment share it, because a cylinder's normal
+        // does not depend on height.
+        const glm::vec3 normal = glm::normalize(glm::vec3(x, 0.0f, z));
+
+        vertices.push_back({ { x, -UNIT_HALF_EXTENT, z }, normal, bottomColor });
+        vertices.push_back({ { x,  UNIT_HALF_EXTENT, z }, normal, topColor });
+    }
+
+    // ---- 2. the wall's indices: one quad per segment ----
+    //
+    // Vertex 2*i is the bottom of segment i and 2*i + 1 is its top, so a strip
+    // between segment i and the next one has these four corners:
+    //
+    //     t0 --- t1        b0 = 2*i          t0 = 2*i + 1
+    //     |  \    |        b1 = 2*next       t1 = 2*next + 1
+    //     |    \  |
+    //     b0 --- b1
+    //
+    // 'next' wraps with a modulo, which is what closes the tube: the last
+    // strip joins back to vertex 0 instead of needing a duplicate ring.
+    //
+    // b0 -> b1 -> t1 and b0 -> t1 -> t0 are counter-clockwise seen from
+    // OUTSIDE the tube, which is what GL_CULL_FACE needs (Phases 9 and 11).
+    for (int i = 0; i < segments; ++i) {
+        const int next = (i + 1) % segments;
+
+        const unsigned int b0 = static_cast<unsigned int>(i * 2);
+        const unsigned int t0 = b0 + 1u;
+        const unsigned int b1 = static_cast<unsigned int>(next * 2);
+        const unsigned int t1 = b1 + 1u;
+
+        indices.push_back(b0);
+        indices.push_back(b1);
+        indices.push_back(t1);
+
+        indices.push_back(b0);
+        indices.push_back(t1);
+        indices.push_back(t0);
+    }
+
+    // ---- 3. the end caps (Phase 21) ----
+    //
+    // WHY THE CAPS CANNOT REUSE THE WALL'S RIM VERTICES. The wall's rim vertex
+    // at segment i already sits in exactly the right place for the cap's rim.
+    // It cannot be used, because a vertex carries ONE normal and these two
+    // surfaces need different ones: the wall's points sideways, out from the
+    // axis, and the cap's points straight up or straight down. Sharing would
+    // force one of them to be wrong.
+    //
+    // This is the Phase 10 cube lesson again, and it is the reason this is its
+    // own phase rather than four more lines in the one above. Every cap rim
+    // vertex is a duplicate of a wall rim vertex in POSITION and a different
+    // vertex in MEANING:
+    //
+    //     wall        2 * segments            vertices
+    //     each cap    1 centre + segments     vertices
+    //     total       4 * segments + 2        vertices, 4 * segments triangles
+    //
+    // A TRIANGLE FAN is the shape: one centre vertex, and a triangle from it to
+    // each neighbouring pair of rim vertices. It is drawn here as ordinary
+    // indexed triangles rather than with GL_TRIANGLE_FAN, because this mesh is
+    // one glDrawElements call for the whole cylinder and a fan primitive would
+    // need its own call - and because Mesh only knows how to draw GL_TRIANGLES.
+    //
+    // The windings are OPPOSITE to each other. Counter-clockwise seen from
+    // outside means counter-clockwise seen from ABOVE for the top cap and from
+    // BELOW for the bottom one, so the two fans list their corners in reverse
+    // order. Getting this wrong is invisible from the front and leaves the other
+    // end of the tube see-through, which is exactly the hole Phase 20 measured.
+    for (int end = 0; end < 2; ++end) {
+        const bool top = (end == 1);
+        const float y = top ? UNIT_HALF_EXTENT : -UNIT_HALF_EXTENT;
+        const glm::vec3 normal(0.0f, top ? 1.0f : -1.0f, 0.0f);
+        const glm::vec3& color = top ? topColor : bottomColor;
+
+        // The centre of the disc, then its rim - all with the cap's flat normal.
+        const unsigned int centre = static_cast<unsigned int>(vertices.size());
+        vertices.push_back({ glm::vec3(0.0f, y, 0.0f), normal, color });
+
+        const unsigned int rimStart = static_cast<unsigned int>(vertices.size());
+        for (int i = 0; i < segments; ++i)
+            vertices.push_back({ glm::vec3(ring[static_cast<std::size_t>(i)].x,
+                                           y,
+                                           ring[static_cast<std::size_t>(i)].y),
+                                 normal, color });
+
+        for (int i = 0; i < segments; ++i) {
+            const unsigned int a = rimStart + static_cast<unsigned int>(i);
+            const unsigned int b = rimStart + static_cast<unsigned int>((i + 1) % segments);
+
+            indices.push_back(centre);
+            // The only difference between the two fans: which way round the pair
+            // goes. The top needs (centre, a, b); the bottom needs (centre, b, a).
+            indices.push_back(top ? a : b);
+            indices.push_back(top ? b : a);
+        }
+    }
+}
+
+// Builds the unit cylinder - side wall and both end caps - and uploads it.
+// This is the call main() makes.
+inline bool makeCylinder(Mesh& mesh,
+                         int segments,
+                         const glm::vec3& bottomColor,
+                         const glm::vec3& topColor)
+{
+    std::vector<Vertex> vertices;
+    std::vector<unsigned int> indices;
+    buildCylinderGeometry(segments, bottomColor, topColor, vertices, indices);
+    return mesh.upload("cylinder", vertices, indices);
+}
+
+// Phase 22: the first generator with TWO parameters, and the shape whose normal
+// is the simplest of all.
+//
+// A UV sphere is built the way a globe is drawn: rings of latitude stacked from
+// one pole to the other, each ring cut into the same number of steps of
+// longitude.
+//
+//     stacks is latitude  - how many bands from the north pole to the south.
+//     slices is longitude - how many steps around each ring.
+//
+// They are genuinely independent, which is what makes this the first
+// two-parameter surface: raising one makes the ball smoother top-to-bottom and
+// the other smoother round the middle.
+//
+// Unit-mesh rule (Phase 16): no size parameter. The ball is exactly 1 unit
+// across, centred on its own origin, so its radius is UNIT_HALF_EXTENT.
+//
+//     rings     = stacks - 1                    (the poles are not rings)
+//     vertices  = 2 + (stacks - 1) * slices     =  200 at 12 x 18
+//     triangles = 2 * slices * (stacks - 1)     =  396 at 12 x 18
+//     indices   = 6 * slices * (stacks - 1)     = 1188 at 12 x 18
+//
+// THE NORMAL IS THE POSITION. For a sphere centred on its own origin, the
+// direction from the centre out to a point on the surface IS the surface normal
+// there - so the normal is just normalize(position), and nothing else has to be
+// worked out. That is the simplest analytic normal in the project, and it is
+// only this simple because the mesh is a unit mesh centred on the origin: a
+// sphere built off-centre would need normalize(position - centre).
+//
+// THE POLES ARE SHARED, UNLIKE THE CYLINDER'S CAP RIMS. Each pole is ONE vertex
+// serving 'slices' triangles. That is correct here, and the contrast with
+// Phase 21 is worth understanding:
+//
+//     cylinder cap rim   the wall wants a sideways normal and the cap wants an
+//                        axial one. Genuinely different directions at the same
+//                        point, so they need separate vertices.
+//     sphere pole        the true normal at the north pole is (0, 1, 0), and
+//                        every triangle meeting there agrees with it. One
+//                        vertex, one normal, correct.
+//
+// The naive way to build a sphere is a single rectangular lattice of
+// (stacks + 1) * slices vertices with the top and bottom rows collapsed onto the
+// poles. That is shorter to write, but it produces a ring of DEGENERATE
+// zero-area triangles at each pole, where two of the three corners are the same
+// point. They draw nothing, cost a little, and make a mesh that cannot pass a
+// "no degenerate triangles" check. Treating the two pole bands as triangle FANS
+// instead - exactly like the cylinder's caps - avoids them entirely.
+inline void buildSphereGeometry(int stacks,
+                                int slices,
+                                const glm::vec3& bottomColor,
+                                const glm::vec3& topColor,
+                                std::vector<Vertex>& vertices,
+                                std::vector<unsigned int>& indices)
+{
+    // Two stacks is the smallest sphere there is: two pole fans meeting at a
+    // single ring, which is a diamond rather than a ball but is still a closed
+    // solid. Fewer than three slices could not close round. Phase 25 adds
+    // maxima to go with these minima.
+    if (stacks < 2) stacks = 2;
+    if (slices < 3) slices = 3;
+
+    const float radius = UNIT_HALF_EXTENT;
+    const float halfTurn = TWO_PI * 0.5f;      // pi: pole to pole is half a turn
+
+    vertices.clear();
+    indices.clear();
+    vertices.reserve(2u + static_cast<std::size_t>(stacks - 1) * static_cast<std::size_t>(slices));
+    indices.reserve(static_cast<std::size_t>(slices) * static_cast<std::size_t>(stacks - 1) * 6u);
+
+    // ---- 1. the north pole: vertex 0 ----
+    vertices.push_back({ glm::vec3(0.0f, radius, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), topColor });
+
+    // ---- 2. the rings of latitude, north to south ----
+    //
+    // phi is the angle down from the north pole, so it runs from 0 to pi. The
+    // poles themselves are handled separately, so this loop covers only the
+    // rings strictly between them: j = 1 .. stacks - 1.
+    for (int j = 1; j < stacks; ++j) {
+        const float phi = halfTurn * static_cast<float>(j) / static_cast<float>(stacks);
+        const float y = radius * std::cos(phi);
+        const float ringRadius = radius * std::sin(phi);
+
+        // Blend the two colours from pole to pole: 1 at the north, 0 at the south.
+        const glm::vec3 color = glm::mix(bottomColor, topColor, 1.0f - phi / halfTurn);
+
+        for (int i = 0; i < slices; ++i) {
+            const float theta = TWO_PI * static_cast<float>(i) / static_cast<float>(slices);
+
+            // The same sin-for-x, cos-for-z convention the cylinder uses, so
+            // the windings below come out the same way round.
+            const glm::vec3 position(ringRadius * std::sin(theta),
+                                     y,
+                                     ringRadius * std::cos(theta));
+
+            vertices.push_back({ position, glm::normalize(position), color });
+        }
+    }
+
+    // ---- 3. the south pole: the last vertex ----
+    vertices.push_back({ glm::vec3(0.0f, -radius, 0.0f), glm::vec3(0.0f, -1.0f, 0.0f), bottomColor });
+
+    const unsigned int northPole = 0u;
+    const unsigned int southPole = static_cast<unsigned int>(vertices.size() - 1u);
+
+    // Ring j (1 .. stacks - 1) begins at this vertex. Ring 1 is just below the
+    // north pole; ring stacks - 1 is just above the south pole.
+    const auto ringStart = [slices](int j) {
+        return 1u + static_cast<unsigned int>((j - 1) * slices);
+    };
+
+    // ---- 4. the north pole fan ----
+    //
+    // Walking the ring in increasing order and finishing at the pole comes out
+    // counter-clockwise seen from outside, matching the middle bands below.
+    for (int i = 0; i < slices; ++i) {
+        indices.push_back(ringStart(1) + static_cast<unsigned int>(i));
+        indices.push_back(ringStart(1) + static_cast<unsigned int>((i + 1) % slices));
+        indices.push_back(northPole);
+    }
+
+    // ---- 5. the middle bands: a quad per slice, two triangles each ----
+    //
+    // Exactly the cylinder wall's pattern, with 'upper' and 'lower' being two
+    // rings of DIFFERENT radius instead of two rings of the same radius. At
+    // stacks = 2 there are no middle bands and this loop does not run at all.
+    for (int j = 1; j < stacks - 1; ++j) {
+        for (int i = 0; i < slices; ++i) {
+            const unsigned int next = static_cast<unsigned int>((i + 1) % slices);
+            const unsigned int upperI = ringStart(j) + static_cast<unsigned int>(i);
+            const unsigned int upperN = ringStart(j) + next;
+            const unsigned int lowerI = ringStart(j + 1) + static_cast<unsigned int>(i);
+            const unsigned int lowerN = ringStart(j + 1) + next;
+
+            indices.push_back(lowerI);
+            indices.push_back(lowerN);
+            indices.push_back(upperN);
+
+            indices.push_back(lowerI);
+            indices.push_back(upperN);
+            indices.push_back(upperI);
+        }
+    }
+
+    // ---- 6. the south pole fan ----
+    //
+    // The reverse order of the north fan, for the same reason the cylinder's two
+    // caps wind oppositely: "counter-clockwise seen from outside" points a
+    // different way at the two ends of a solid.
+    for (int i = 0; i < slices; ++i) {
+        indices.push_back(southPole);
+        indices.push_back(ringStart(stacks - 1) + static_cast<unsigned int>((i + 1) % slices));
+        indices.push_back(ringStart(stacks - 1) + static_cast<unsigned int>(i));
+    }
+}
+
+// Builds the unit sphere and uploads it. This is the call main() makes.
+inline bool makeSphere(Mesh& mesh,
+                       int stacks,
+                       int slices,
+                       const glm::vec3& bottomColor,
+                       const glm::vec3& topColor)
+{
+    std::vector<Vertex> vertices;
+    std::vector<unsigned int> indices;
+    buildSphereGeometry(stacks, slices, bottomColor, topColor, vertices, indices);
+    return mesh.upload("sphere", vertices, indices);
+}
+
+// ---- Phase 23: the OTHER way of deciding a normal ----------------------
+//
+// Every normal so far has been ANALYTIC - written down because the shape was
+// known: an axis constant for the cube, the quad, the grid and the cylinder's
+// caps, normalize(vec3(x, 0, z)) for the cylinder wall, normalize(position) for
+// the sphere. That is always the better answer when it is available, because it
+// is exact and does not depend on how finely the mesh is divided.
+//
+// It is not always available. For a shape with no formula - a hull hand-built
+// from arbitrary points, or a surface that has been deformed - the only
+// information left is the triangles themselves. So: take the normal of every
+// triangle that MEETS a vertex and average them.
+//
+//     N_v = (sum of N_i) / || sum of N_i ||        - L9 slide 20
+//
+// Dividing by the length of the sum is the same as dividing by the count and
+// then normalizing, so the formula is written in the compact form the slide
+// uses. This function is a direct implementation of that slide and belongs in
+// the report.
+//
+// It overwrites whatever normals the vertices already had, and it only makes a
+// difference when vertices are SHARED between faces. On a mesh where every face
+// owns its own vertices - the 24-vertex cube, the cylinder's cap rims - each
+// vertex is touched by only one face's triangles, so the "average" is that one
+// face's normal and nothing changes. That is the whole point of the comparison
+// in Phase 23, and the reason the flat cube cannot be smoothed.
+inline void computeSmoothNormals(std::vector<Vertex>& vertices,
+                                const std::vector<unsigned int>& indices)
+{
+    // Start from zero so the sum can be accumulated in place.
+    for (Vertex& vert : vertices)
+        vert.normal = glm::vec3(0.0f);
+
+    // Add each triangle's own normal to all three of its corners.
+    for (std::size_t i = 0; i + 2 < indices.size(); i += 3) {
+        const glm::vec3& a = vertices[indices[i]].position;
+        const glm::vec3& b = vertices[indices[i + 1]].position;
+        const glm::vec3& c = vertices[indices[i + 2]].position;
+
+        // The face normal, from the winding - exactly the cross product the
+        // winding tests in Phases 9 to 22 have been computing all along.
+        const glm::vec3 faceNormal = glm::normalize(glm::cross(b - a, c - a));
+
+        vertices[indices[i]].normal += faceNormal;          // accumulate sum N_i
+        vertices[indices[i + 1]].normal += faceNormal;
+        vertices[indices[i + 2]].normal += faceNormal;
+    }
+
+    // Divide by the length of the sum, which is what normalize does.
+    for (Vertex& vert : vertices)
+        vert.normal = glm::normalize(vert.normal);
+}
+
+// Phase 23: a cube built from 8 SHARED corners instead of 24 separate ones.
+//
+// This is the mesh Phase 10 rejected. Phase 10 wanted one flat colour per face,
+// and a vertex carries one colour, so a corner shared by three faces could not
+// serve all three - hence 24 vertices. Everything that followed inherited that
+// reasoning, including the cylinder's cap rims in Phase 21.
+//
+// Sharing is exactly what makes smoothing possible. With 8 vertices, each corner
+// is touched by the triangles of three different faces, so averaging them gives
+// a normal that points diagonally outward and is shared by all three. Normals
+// then INTERPOLATE across each face instead of being constant over it, and the
+// cube shades as though it were a rounded blob.
+//
+// The same sharing takes the per-face colours away again, which is why this cube
+// is coloured by corner height instead: 'bottomColor' on the four lower corners
+// and 'topColor' on the four upper ones. You cannot give a shared-vertex cube six
+// face colours, and failing to is not a limitation of this code - it is the
+// Phase 10 lesson, seen from the other side.
+//
+//     vertices  =  8   (against the flat cube's 24)
+//     triangles = 12   (the same 12)
+//     indices   = 36   (the same 36)
+inline void buildSharedCubeGeometry(const glm::vec3& bottomColor,
+                                    const glm::vec3& topColor,
+                                    std::vector<Vertex>& vertices,
+                                    std::vector<unsigned int>& indices)
+{
+    const float h = UNIT_HALF_EXTENT;
+
+    // The eight corners of a cube, in a fixed order the index list below relies
+    // on: 0-3 are the bottom face walked anticlockwise from (-x,-z), and 4-7 are
+    // the top four directly above them.
+    const glm::vec3 corners[8] = {
+        { -h, -h, -h },   // 0
+        {  h, -h, -h },   // 1
+        {  h,  h, -h },   // 2
+        { -h,  h, -h },   // 3
+        { -h, -h,  h },   // 4
+        {  h, -h,  h },   // 5
+        {  h,  h,  h },   // 6
+        { -h,  h,  h },   // 7
+    };
+
+    vertices.clear();
+    indices.clear();
+    vertices.reserve(8);
+    indices.reserve(36);
+
+    // The normal is left at zero: computeSmoothNormals() fills it in. Writing a
+    // placeholder here rather than guessing is deliberate - there is no single
+    // correct normal for a shared corner until the faces around it are known.
+    for (int i = 0; i < 8; ++i)
+        vertices.push_back({ corners[i],
+                             glm::vec3(0.0f),
+                             corners[i].y < 0.0f ? bottomColor : topColor });
+
+    // Twelve triangles, two per face, every one wound counter-clockwise as seen
+    // from OUTSIDE - checked face by face the same way Phase 10's were.
+    const unsigned int faces[36] = {
+        4, 5, 6,   4, 6, 7,     // +Z front
+        1, 0, 3,   1, 3, 2,     // -Z back
+        5, 1, 2,   5, 2, 6,     // +X right
+        0, 4, 7,   0, 7, 3,     // -X left
+        7, 6, 2,   7, 2, 3,     // +Y top
+        0, 1, 5,   0, 5, 4,     // -Y bottom
+    };
+    for (unsigned int i : faces)
+        indices.push_back(i);
+}
+
+// Builds the shared-corner cube, averages its normals, and uploads it.
+inline bool makeSmoothCube(Mesh& mesh,
+                           const glm::vec3& bottomColor,
+                           const glm::vec3& topColor)
+{
+    std::vector<Vertex> vertices;
+    std::vector<unsigned int> indices;
+    buildSharedCubeGeometry(bottomColor, topColor, vertices, indices);
+    computeSmoothNormals(vertices, indices);
+    return mesh.upload("smoothcube", vertices, indices);
 }
