@@ -47,21 +47,44 @@ Phase 52 is now Phase 66.
 | 21 | The cylinder's two END CAPS: a centre vertex and a triangle fan at each end with flat normals `(0, +/-1, 0)`. The caps need their OWN rim vertices because a vertex carries one normal, so the mesh grows to `4*segments + 2`. A closed, watertight solid | [PHASE_21_EXPLANATION.md](PHASE_21_EXPLANATION.md) |
 | 22 | `makeSphere(stacks, slices)`, the first TWO-parameter surface and the fifth and last mesh: `normal = normalize(position)`, exact because the ball is a unit mesh centred on its own origin. Poles are shared fans, so no degenerate triangles | [PHASE_22_EXPLANATION.md](PHASE_22_EXPLANATION.md) |
 | 23 * | `computeSmoothNormals()` - the L9 slide 20 averaging formula - plus a cube from 8 SHARED corners to demonstrate it on. No new shape. In the `N` view the flat cube shows 3 colours and the smooth one 15 952; running the formula on the flat cube provably changes nothing | [PHASE_23_EXPLANATION.md](PHASE_23_EXPLANATION.md) |
+| 24 (o) | Live per-frame counters in the window title - draw calls, triangles and vertices - accumulated inside `drawMesh()`, so they MEASURE what was drawn instead of predicting it from the config. `640` triangles across `10` draws, hand-checked | [PHASE_24_EXPLANATION.md](PHASE_24_EXPLANATION.md) |
+| 25 | `rebuildMeshes()` on `+` and `-`: one clamped detail level, each mesh deriving its divisions from its level-0 constant so `-` then `+` is exactly reversible. Six levels, 92 to 36,116 triangles, with the draw count fixed at 10. 100 rebuilds leak nothing, proven against a negative control | [PHASE_25_EXPLANATION.md](PHASE_25_EXPLANATION.md) |
 
 Current source: `src/main.cpp`, `src/Mesh.h`, `src/Shader.h`, `src/Camera.h`,
-`shaders/basic.vert`, `shaders/basic.frag`. There are no lights, ships, or
-gameplay yet. **All five meshes now exist** - cube, quad, grid, cylinder and
-sphere - and all five are generated; only the test triangle is still
-hand-written. The scene draws two triangles, a flat grid lying horizontally
-below everything as a floor, **three** spinning cubes of three different sizes
-(all from a single 1 x 1 x 1 mesh and a single VAO), and a left-hand column of a
-closed cylinder, a quad and a ball, viewed through a mouse-driven orbit camera
-with real limits, with `GL_DEPTH_TEST` and `GL_CULL_FACE` still switchable live
-to see what each one was doing. Every one of those objects is a `Mesh`, every
-normal can be checked by eye with `N`, object size lives in the model matrix
-rather than in the vertex data, how finely a mesh is divided is a separate value
-from how big it is, and every normal so far is ANALYTIC - written down from
-knowing the shape rather than measured from the triangles.
+`shaders/basic.vert`, `shaders/basic.frag`, `src/Material.h`, `src/Lighting.h`. **Stages B and C are
+complete.** The scene is lit by two lights under six materials with Flat, Gouraud and
+Phong selectable in one program; there are no ships or gameplay yet - Stage D begins at
+Phase 34. The frame is 14 draws, 1840 triangles, 1045 vertices. All five meshes
+exist - cube, quad, grid, cylinder and sphere - and all five are generated; only
+the test triangle is still hand-written. The scene draws two triangles, a flat
+grid lying horizontally below everything as a floor, **three** spinning cubes of
+three different sizes (all from a single 1 x 1 x 1 mesh and a single VAO), a
+left-hand column of a closed cylinder, a quad and a ball, and a second cube built
+from shared corners, viewed through a mouse-driven orbit camera with real limits,
+with `GL_DEPTH_TEST` and `GL_CULL_FACE` still switchable live to see what each one
+was doing. Every one of those objects is a `Mesh`, every normal can be checked by
+eye with `N`, object size lives in the model matrix rather than in the vertex
+data, and how finely a mesh is divided is a separate value from how big it is.
+
+Both ways of deciding a normal are now in place: ANALYTIC - written down from
+knowing the shape - for all five generators, and AVERAGED by
+`computeSmoothNormals()` for a mesh whose vertices are shared. The window title
+reports what each frame actually cost (`10` draws, `640` triangles, `437`
+vertices at the starting detail), and `+` and `-` rebuild the three parameterised
+meshes live across six detail levels spanning 92 to 36,116 triangles - with the
+draw count fixed at 10 throughout, because detail changes how finely the same
+objects are divided and never how many objects there are.
+
+## Stage reviews
+
+Two stages have been audited end to end after completion. Each review is a
+stand-alone check-up written in plain language, with its own verdict, phase-by-
+phase audit, findings list and viva pack.
+
+| Stage | Phases | Review | Verdict |
+|---|---|---|---|
+| A | 3-13 | [STAGE_A_REVIEW.md](STAGE_A_REVIEW.md) | Complete; 1 real defect found (F1), fixed in Phase 19 |
+| B | 14-25 | [STAGE_B_REVIEW.md](STAGE_B_REVIEW.md) | Complete; 5 defects found and all fixed inside the stage; 3,010 checks passing |
 
 ## How to read the tables
 
@@ -158,8 +181,8 @@ techniques and different normals.
 | 21 (o) **done** | The cylinder caps: a centre vertex and a triangle fan at each end, normals `(0, +1, 0)` and `(0, -1, 0)` | A closed solid; the caps are two flat colours against the sweeping side wall | Change the cylinder height | B4 |
 | 22 **done** | `makeSphere(stacks, slices)` - a two-parameter surface with `normal = normalize(position)` | A sphere that the debug view renders as the classic RGB ball | Change stacks and slices independently | B4 |
 | 23 * **done** | `computeSmoothNormals()` - the L9 slide 20 averaging formula - demonstrated on a shared-vertex cube against the flat 24-vertex cube | The two cubes are obviously different in the debug view: hard face colours against blended corners | Explain why the 24-vertex cube cannot be smoothed | B4.2 |
-| 24 (o) | Live counters in the window title: draw calls, vertices, triangles | The reported triangle count matches what you can work out by hand for the gallery | Add the vertex count to the title | B15.1 |
-| 25 | `rebuildMeshes()` driven by `+` and `-`, with clamped minimum and maximum detail | The polygon count changes live in wireframe, and 100 rebuilds produce no OpenGL error and no leak | Change the detail limits | B15.1 |
+| 24 (o) **done** | Live counters in the window title: draw calls, vertices, triangles | The reported triangle count matches what you can work out by hand for the gallery | Add the vertex count to the title | B15.1 |
+| 25 **done** | `rebuildMeshes()` driven by `+` and `-`, with clamped minimum and maximum detail | The polygon count changes live in wireframe, and 100 rebuilds produce no OpenGL error and no leak | Change the detail limits | B15.1 |
 
 **Note on the `Vertex` struct (added after Phase 14 was built).** This plan
 originally specified `struct Vertex { glm::vec3 position, normal; }`. The
@@ -206,14 +229,14 @@ marks are. Each phase adds exactly one term or one comparison.
 
 | Phase | Adds | Checkpoint | Viva change | Ref |
 |---:|---|---|---|---|
-| 26 | The normal matrix `uNormalMatrix = (M^-1)^T`, computed on the CPU once per object per frame | The Phase 15 debug view stays correct on a non-uniformly scaled cube, which it does not without the normal matrix | Stretch a cube and show the correction | B5.3 |
-| 27 | Ambient plus diffuse from one directional sun; `uGlobalAmbient`, `uKa`, `uKd` | A sphere with a clear lit side and dark side | Change the sun direction | B5 |
-| 28 * | Specular `(R.V)^n`, `uKs`, `uShininess`, and `uViewPos` | The highlight **moves** when the camera orbits | Change shininess and watch the highlight tighten | B5 |
-| 29 | `src/Material.h` with the L8 slide 60 table: brass, polished silver, black plastic, plus tuned ocean, hull wood, and sailcloth | Three spheres side by side that are obviously different materials - the report screenshot for the `n_s` comparison | Swap one object's material | B6 |
-| 30 | The second light: a point light with attenuation `1/(a0 + a1*d + a2*d^2)`, and the `L` key to isolate each light | Moving the point light near an object visibly brightens it; `L` proves each light's contribution separately | Change the attenuation constants | B6 |
-| 31 * | `uniform int uShadingMode` with one branch in **one** program: Flat (`dFdx`/`dFdy`), Gouraud (lit in the vertex shader), Phong (lit in the fragment shader); keys `1`/`2`/`3`. `computeLighting` lives in one C++ string prepended to both stages | Keys `1`/`2`/`3` give three visibly different images of identical geometry | Explain why three shader programs were not used | B5 |
-| 32 | `K` term mask (ambient / +diffuse / +specular / full - L8 slide 54) and the `B` Blinn-Phong `(N.H)^n` toggle | `K` walks through the lecture slide live in your own scene | Change the `K` cycle order | B15.2 |
-| 33 * | Verification only, no new feature: the two demonstrations are set up and photographed | **Demo A** - grid at `N` = 8-16 with `n_s` = 160: the highlight vanishes in Gouraud and returns in Phong. **Demo B** - cylinder at 6-8 segments: Flat shows Mach bands, Gouraud smears the highlight, Phong keeps it round | Lower the tessellation until Gouraud fails | B15.3 |
+| 26 **done** | The normal matrix `uNormalMatrix = (M^-1)^T`, computed on the CPU once per object per frame | The Phase 15 debug view stays correct on a non-uniformly scaled cube, which it does not without the normal matrix | Stretch a cube and show the correction | B5.3 |
+| 27 **done** | Ambient plus diffuse from one directional sun; `uGlobalAmbient`, `uKa`, `uKd` | A sphere with a clear lit side and dark side | Change the sun direction | B5 |
+| 28 * **done** | Specular `(R.V)^n`, `uKs`, `uShininess`, and `uViewPos` | The highlight **moves** when the camera orbits | Change shininess and watch the highlight tighten | B5 |
+| 29 **done** | `src/Material.h` with the L8 slide 60 table: brass, polished silver, black plastic, plus tuned ocean, hull wood, and sailcloth | Three spheres side by side that are obviously different materials - the report screenshot for the `n_s` comparison | Swap one object's material | B6 |
+| 30 **done** | The second light: a point light with attenuation `1/(a0 + a1*d + a2*d^2)`, and the `L` key to isolate each light | Moving the point light near an object visibly brightens it; `L` proves each light's contribution separately | Change the attenuation constants | B6 |
+| 31 * **done** | `uniform int uShadingMode` with one branch in **one** program: Flat (`dFdx`/`dFdy`), Gouraud (lit in the vertex shader), Phong (lit in the fragment shader); keys `1`/`2`/`3`. `computeLighting` lives in one C++ string prepended to both stages | Keys `1`/`2`/`3` give three visibly different images of identical geometry | Explain why three shader programs were not used | B5 |
+| 32 **done** | `K` term mask (ambient / +diffuse / +specular / full - L8 slide 54) and the `B` Blinn-Phong `(N.H)^n` toggle | `K` walks through the lecture slide live in your own scene | Change the `K` cycle order | B15.2 |
+| 33 * **done** | Verification only, no new feature: the two demonstrations are set up and photographed | **Demo A** - grid at `N` = 8-16 with `n_s` = 160: the highlight vanishes in Gouraud and returns in Phong. **Demo B** - cylinder at 6-8 segments: Flat shows Mach bands, Gouraud smears the highlight, Phong keeps it round | Lower the tessellation until Gouraud fails | B15.3 |
 
 Nothing after Stage C may break Phase 33. If a later change stops either
 demonstration working, the change is wrong.

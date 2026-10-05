@@ -1,12 +1,24 @@
 # AGENT.md - Ship Battle Simulator
 
-This repository is the incremental teaching build. The current source of truth is [README.md](README.md), the phase plan is [docs/PHASE_PLAN.md](docs/PHASE_PLAN.md), and the current completed checkpoint is documented in [docs/PHASE_25_EXPLANATION.md](docs/PHASE_25_EXPLANATION.md).
+This repository is the incremental teaching build. The current source of truth is [README.md](README.md), the phase plan is [docs/PHASE_PLAN.md](docs/PHASE_PLAN.md), and the current completed checkpoint is documented in [docs/PHASE_33_EXPLANATION.md](docs/PHASE_33_EXPLANATION.md).
 
 ## Current phase boundary
 
-Phase 25 is the latest implemented phase, and **Stage B is complete**. All five meshes exist (cube, quad, grid, cylinder, sphere) and no sixth will be added. The frame's cost is measured in `drawMesh()` and reported in the window title, and `+`/`-` rebuild the three parameterised meshes live across six detail levels (92 to 36,116 triangles) while the draw count stays at 10.
+Phase 33 is the latest implemented phase, and **Stage C - Illumination is complete**. The project now has two lights (a directional sun and an attenuated point light), six named materials (the first three verbatim from L8 slide 60), the normal matrix, and Flat / Gouraud / Phong in ONE shader program selected by `uniform int uShadingMode`. The lighting maths lives once, as GLSL text in [src/Lighting.h](src/Lighting.h), and is spliced into both shader stages. Keys: `1`/`2`/`3` shading mode, `L` lights, `K` term mask (L8 s54), `B` Blinn-Phong, `M` normal matrix, plus all Stage A/B keys. The scene is 14 draws / 1840 triangles / 1045 vertices.
 
-The next phase is Phase 26 in [docs/PHASE_PLAN.md](docs/PHASE_PLAN.md), which **begins Stage C - Illumination, where the marks are**: `uNormalMatrix = (M^-1)^T`, computed on the CPU once per object per frame, one `glm::mat3(glm::transpose(glm::inverse(model)))` per object. It passes when the Phase 15 debug view stays correct on a NON-UNIFORMLY scaled cube, which it provably does not without the normal matrix - so the phase needs a stretched cube to demonstrate on, and the before/after has to be shown. Nothing else. Do not add ambient, diffuse, specular, materials, ships, or anything past that unless the student explicitly asks to begin the phase that owns it. Each Stage C phase adds exactly one term or one comparison.
+The next phase is Phase 34 in [docs/PHASE_PLAN.md](docs/PHASE_PLAN.md), which **begins Stage D - the ship hierarchy**: `src/Ship.h`, the root and the hull and deck **frames**. Its checkpoint is a hull and a deck at the right size with the deck NOT inheriting the hull's stretch. Nothing else: no mast, no cannon, no animation, no movement. Do not start Stage D unless the student asks.
+
+**Nothing after Stage C may break Demo A or Demo B.** Demo A: the sea at `n_s` 160 - Gouraud's streak peaks at 186 and Phong's at 255 at CELLS 8, and Phong's image is identical across tessellations while Gouraud's changes by ~17,000 pixels. Demo B: the 8-segment brass tube - Flat uses 42 brightness levels against Phong's 216. If a change stops either working, the change is wrong.
+
+## Stage C rules that must keep holding
+
+- **One shader program, one branch.** Never split Flat/Gouraud/Phong into separate programs.
+- **The lighting code exists once** (`src/Lighting.h`). Never paste a second copy into a `.vert` or `.frag`; a copy that drifts makes the Gouraud/Phong comparison a lie.
+- **Material values are verbatim.** Brass, polished silver and black plastic are L8 slide 60; do not tune them. The `n_s` spread of 4 to 160 is deliberate.
+- **Two lights, no more.** The ambient term is added once, outside the per-light work.
+- **A normal is transformed by `(M^-1)^T` and renormalised**, in the vertex shader; `normalize()` is also needed in the fragment shader after interpolation.
+- **`uViewPos` must be refreshed every frame**, from the same variable the view matrix is built from.
+- **A test that compares an image to a prediction must predict the WHOLE model**, not one term of it. Fitting only attenuation on a surface with a strong specular term failed for exactly this reason.
 
 ## Permanent project requirements
 

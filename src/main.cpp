@@ -1,4 +1,4 @@
-// Ship Battle Simulator - Phase 25: rebuilding meshes while the program runs.
+// Ship Battle Simulator - Phase 33: Stage C complete - the two L9 demonstrations.
 //
 // Every frame follows the same clear order:
 //   1. measure time;
@@ -78,6 +78,8 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "Camera.h"
+#include "Lighting.h"
+#include "Material.h"
 #include "Mesh.h"
 #include "Shader.h"
 
@@ -91,7 +93,7 @@ namespace AppConfig {
 // These values are grouped here so they are easy to find and change during a viva.
 constexpr int WINDOW_WIDTH = 1280;
 constexpr int WINDOW_HEIGHT = 720;
-constexpr const char* WINDOW_TITLE = "Ship Battle Simulator - Phase 25";
+constexpr const char* WINDOW_TITLE = "Ship Battle Simulator - Phase 33";
 constexpr const char* VERTEX_SHADER_PATH = "shaders/basic.vert";
 constexpr const char* FRAGMENT_SHADER_PATH = "shaders/basic.frag";
 
@@ -397,9 +399,10 @@ constexpr float HEIGHT = 0.9f;
 // quad's top edge is at y = +0.40 and this tube's base is at +0.50.
 const glm::vec3 POSITION(-1.8f, 0.95f, 0.0f);
 
-// A vertical gradient, bottom to top. These are VERTEX COLOURS, not lighting -
-// there is no light in this project until Phase 27, and it is worth saying so
-// because a dark-to-light gradient on a round object looks a lot like shading.
+// A vertical gradient, bottom to top. These are VERTEX COLOURS, not lighting.
+// Phase 27 added real light on top of them, so the gradient and the shading are
+// now multiplied together - which is exactly what Phase 29 removes, by replacing
+// the colour with a real material so that ALL the shading comes from the light.
 //
 // Steel grey to bright silver, as a quiet preview of the polished-silver
 // fittings material (L8 slide 60), and chosen to stand out from the golden
@@ -451,13 +454,179 @@ constexpr float DIAMETER = 0.72f;
 // 0.12 and the grid floor (y = -1.40) by 0.16.
 const glm::vec3 POSITION(-1.8f, -0.88f, 0.0f);
 
-// A vertical gradient from pole to pole. VERTEX COLOURS, not lighting - there is
-// still no light in this project until Phase 27. Violet to lilac, picked to stand
-// apart from the golden background, the blue grid and the silver cylinder.
+// A vertical gradient from pole to pole. VERTEX COLOURS, not lighting - the
+// shading on this ball comes from Phase 27's sun and is a separate thing
+// multiplied on top. Violet to lilac, picked to stand apart from the golden
+// background, the blue grid and the silver cylinder.
 const glm::vec3 BOTTOM_COLOR(0.18f, 0.08f, 0.30f);
 const glm::vec3 TOP_COLOR(0.62f, 0.42f, 0.85f);
 
 } // namespace SphereConfig
+
+namespace LightConfig {
+
+// Phase 27: the project's first light. There will be exactly TWO lights in the
+// finished program and no more - this sun, and the muzzle-flash point light that
+// arrives in Phase 30. Two is enough to show how contributions SUM, which is the
+// lecture's point, and few enough to keep the shader readable.
+
+// The direction the sunlight TRAVELS, not the direction towards the sun. Down and
+// across, so it lights the tops and one side of everything and leaves the other
+// side in shadow - which is what makes a lit side and a dark side visible.
+//
+// The fragment shader negates this to get L, the direction from a surface toward
+// the light. Doing the negation in one place, named, means it cannot be done twice
+// by accident.
+const glm::vec3 SUN_DIRECTION(-0.4f, -0.35f, -0.5f);
+
+// Slightly warm white. Sunlight is not pure (1,1,1), and a faint warmth makes the
+// difference between the lit and unlit sides read as light rather than as a change
+// of colour.
+const glm::vec3 SUN_COLOR(1.00f, 0.96f, 0.90f);
+
+// The light that comes from everywhere. It is the stand-in for all the light that
+// has already bounced off other surfaces, which a LOCAL illumination model cannot
+// compute (L8 s10-11) because it only ever looks at one surface at a time.
+//
+// Slightly blue, because in a real scene the sky is what fills the shadows. It is
+// also why "why are there no shadows?" has a real answer rather than an excuse:
+// the pipeline renders each polygon independently, with no knowledge of any other.
+const glm::vec3 GLOBAL_AMBIENT(0.15f, 0.15f, 0.18f);
+
+// ---- Phase 30: the second light, and the last one ------------------------
+//
+// A POINT light, which is a different kind of thing from the sun in one important
+// way: it has a POSITION, so it has a distance to every surface, so its light falls
+// off. The sun has only a direction and never falls off at all (L8 s19).
+//
+// Having exactly one of each kind is deliberate. It makes the difference between
+// them something you can see rather than something you have to be told, and two
+// lights is enough to show how contributions SUM - which is the lecture's point -
+// while staying few enough to keep the shader readable.
+//
+// In the finished project this becomes the MUZZLE FLASH: it will sit at the
+// cannon's muzzle and be active for about 0.15 seconds after firing (Phase 49).
+// Here it sits still, just above the floor, so that its falloff can be studied in
+// a single frame instead of in a fifteen-hundredth of a second.
+const glm::vec3 POINT_POSITION(0.0f, -0.95f, 0.60f);
+
+// Warm orange, because it becomes a muzzle flash. It also helps tell the two lights
+// apart: the sun is faintly warm white and the ambient is faintly blue, so each of
+// the three contributions is a slightly different colour and the 'L' key's
+// comparison is easy to read.
+const glm::vec3 POINT_COLOR(1.00f, 0.78f, 0.45f);
+
+// Brighter than 1 on purpose. A point light that falls off has to start strong to
+// be worth having at any distance, and this is the value that makes the pool of
+// light on the floor clearly visible without washing anything out.
+const float POINT_INTENSITY = 3.2f;
+
+// The attenuation constants, from L8 s21:
+//
+//     attenuation = 1 / (a0 + a1 * d + a2 * d * d)
+//
+// Three terms, each doing a different job:
+//
+//   a0 = 1.00   the constant term. It stops the division exploding when d is near
+//               zero - without it, a surface touching the light would be infinitely
+//               bright - and it sets the brightness at the light itself.
+//   a1 = 0.09   the linear term.
+//   a2 = 0.032  the quadratic term. Real light falls off as 1/d^2 because it
+//               spreads over the surface of a sphere, and this is the term that
+//               models that. It dominates at long range.
+//
+// The other two terms are there because a purely quadratic falloff looks harsher
+// than real light does - partly because real rooms are full of bounced light that
+// this local model cannot compute at all (L8 s10-11), which is the same reason
+// there is a global ambient term.
+const float ATTENUATION_CONSTANT = 1.000f;
+const float ATTENUATION_LINEAR = 0.090f;
+const float ATTENUATION_QUADRATIC = 0.032f;
+
+// Phase 30: which lights the 'L' key currently has switched on, as bit flags.
+// Bit 0 is the sun, bit 1 is the point light.
+constexpr int MASK_SUN = 1;
+constexpr int MASK_POINT = 2;
+constexpr int MASK_BOTH = MASK_SUN | MASK_POINT;
+
+} // namespace LightConfig
+
+// Phase 32: which terms of the illumination model are on, as bit flags. L8 slide 54.
+namespace TermMask {
+constexpr int AMBIENT = 1;
+constexpr int DIFFUSE = 2;
+constexpr int SPECULAR = 4;
+constexpr int ALL = AMBIENT | DIFFUSE | SPECULAR;
+
+// The cycle the 'K' key walks, and it is deliberately not just counting upward.
+//
+//   ambient            what a surface looks like with no directional light at all
+//   ambient + diffuse  the shape appears
+//   all three          the finished picture
+//   specular ALONE     the highlight on its own, against black
+//
+// Ending on specular-alone is the useful part: it is the one term you cannot pick
+// out by eye once it has been added to the others, so seeing it isolated is what
+// makes the sum believable. Then it returns to ambient and the walk repeats.
+const int CYCLE[4] = { AMBIENT, AMBIENT | DIFFUSE, ALL, SPECULAR };
+constexpr int CYCLE_COUNT = 4;
+
+inline const char* name(int mask)
+{
+    switch (mask) {
+    case AMBIENT:           return "ambient only";
+    case AMBIENT | DIFFUSE: return "ambient + diffuse";
+    case ALL:               return "all three terms - the finished picture";
+    case SPECULAR:          return "specular ONLY - the highlight against black";
+    default:                return "custom";
+    }
+}
+} // namespace TermMask
+
+namespace MaterialDemoConfig {
+
+// Phase 29: three spheres side by side, in brass, polished silver and black
+// plastic. This is the report screenshot for the shininess comparison.
+//
+// They are the SAME sphere mesh as the one in the left-hand column, drawn three
+// more times - so the whole demonstration costs three draw calls and no extra
+// memory on the graphics card. That is the Phase 16 mesh-reuse rule paying for
+// itself in a place where it is easy to see.
+//
+// What to look for, from left to right:
+//
+//   brass            n_s = 27.9   a broad warm highlight on a strongly coloured
+//                                 surface - metal tints what it absorbs
+//   polished silver  n_s = 89.6   a much TIGHTER highlight on a nearly grey
+//                                 surface - silver has little colour of its own
+//   black plastic    n_s = 32     almost no diffuse light at all (k_d = 0.01) and
+//                                 yet an obvious shine (k_s = 0.50)
+//
+// The third one is the argument for materials existing. "Black but polished"
+// cannot be expressed as a single colour, which is exactly why a surface needs
+// four numbers rather than one.
+// WHERE these sit is not a cosmetic choice, and getting it wrong broke the phase
+// once. They were first placed high up at y = 1.35, where the default camera sees
+// their UNDERSIDES - which face away from both the sun and the mirror direction. The
+// black plastic ball rendered pure black, max luminance 0, because specular is the
+// only light it reflects at all. A material demo that shows no highlight is not a
+// material demo.
+//
+// So they sit at eye level and in front, where the sun-plus-viewer half-vector lands
+// squarely on the face you are looking at.
+const glm::vec3 POSITIONS[3] = {
+    { -0.95f, 0.00f, 1.90f },
+    {  0.00f, 0.00f, 1.90f },
+    {  0.95f, 0.00f, 1.90f },
+};
+
+// Noticeably bigger than the left-hand column's ball, because the thing being
+// compared is a highlight and a highlight needs room to be seen.
+const float DIAMETER = 0.55f;
+
+constexpr int COUNT = static_cast<int>(sizeof(POSITIONS) / sizeof(POSITIONS[0]));
+
+} // namespace MaterialDemoConfig
 
 namespace DetailConfig {
 
@@ -530,6 +699,48 @@ const glm::vec3 BOTTOM_COLOR(0.30f, 0.12f, 0.06f);
 const glm::vec3 TOP_COLOR(0.95f, 0.72f, 0.45f);
 
 } // namespace SmoothCubeConfig
+
+namespace StretchedCubeConfig {
+
+// Phase 26: a cube deliberately squashed and stretched by DIFFERENT amounts on
+// each axis, and built from SHARED corners. Both of those matter, and the second
+// one is the subtle part.
+//
+// THE TRAP. A non-uniform scale is not enough on its own. The flat 24-vertex
+// cube's normals are axis-aligned - (1,0,0), (0,1,0) and so on - and an
+// axis-aligned scale leaves such a normal pointing exactly where it started:
+//
+//     diag(sx,sy,sz) * (1,0,0) = (sx,0,0)   ->  normalize  ->  (1,0,0)
+//
+// Only one component is non-zero, so scaling changes the vector's LENGTH and not
+// its DIRECTION, and normalize() throws the length away. The naive matrix and the
+// normal matrix agree, and the bug is invisible. Measured: 0.000 degrees of
+// difference on all 12 triangles, at every rotation.
+//
+// So this cube uses the Phase 23 SHARED-corner mesh instead. Its normals are the
+// corner diagonals, roughly (1,1,1)/sqrt(3), which have all three components
+// non-zero - and now the two matrices disagree badly:
+//
+//     naive       (1.30, 0.22, 0.55) * (1,1,1)  ->  mostly +X
+//     (M^-1)^T    (1/1.30, 1/0.22, 1/0.55)      ->  mostly +Y
+//
+// Those are about 60 degrees apart. The same is true of a squashed ball or any
+// other surface whose normals point in directions the scale axes do not.
+//
+// The general rule, worth saying out loud: the normal matrix matters when a
+// normal is NOT aligned with the axes being scaled unevenly. That is why the
+// cylinder, scaled (DIAMETER, HEIGHT, DIAMETER), also shows no error - its wall
+// normals are (x, 0, z) and the x and z factors are equal.
+const glm::vec3 SCALE(1.30f, 0.22f, 0.55f);
+
+// Front and centre, below the cubes and above the grid floor, where it is easy to
+// orbit around and look at from the side.
+const glm::vec3 POSITION(0.55f, -0.95f, 0.9f);
+
+// It shares the flat cube's rotation so it keeps presenting new faces to the
+// camera; a static one would only ever prove the normal matrix on two of them.
+
+} // namespace StretchedCubeConfig
 
 namespace CubeConfig {
 
@@ -703,6 +914,13 @@ struct SceneState {
     // Phase 12. They ARE rebuilt every frame, because uProjection depends on
     // the window's aspect ratio, and the window can be resized at any time.
     glm::mat4 view = glm::mat4(1.0f);
+
+    // Phase 28: where the camera is, in world space. The specular term needs it, and
+    // it has to be refreshed every frame from the orbit camera - a stale uViewPos is
+    // a standard bug here, because the scene keeps rendering and only the highlight
+    // silently stops moving. It is stored rather than recomputed in renderScene()
+    // because updateScene() already works it out to build the view matrix.
+    glm::vec3 viewPos = glm::vec3(0.0f);
     glm::mat4 projection = glm::mat4(1.0f);
 
     // Phase 8: the second, reused draw of the same mesh. It is always the
@@ -739,6 +957,12 @@ struct SceneState {
     // the two turn in perfect step and the only difference between them is the
     // normals.
     glm::mat4 smoothCubeFrame = glm::mat4(1.0f);
+
+    // Phase 26: the stretched cube's frame. Like every other frame it holds a
+    // translation and a rotation and NO scale - the uneven scale this phase is
+    // about is applied at draw time, which is exactly where the normal matrix has
+    // to be computed from.
+    glm::mat4 stretchedCubeFrame = glm::mat4(1.0f);
 
     // Phase 16: one FRAME per cube. A frame holds where the cube is and how
     // it is turned - a translation and a rotation - and deliberately NO
@@ -806,6 +1030,36 @@ struct SceneState {
     MeshDetail detail;
     bool detailUpKeyWasDown = false;
     bool detailDownKeyWasDown = false;
+
+    // Phase 26: toggled by the 'M' key. True is correct: normals are carried into
+    // world space by the normal matrix (M^-1)^T. False deliberately uses
+    // mat3(uModel) instead - the naive, wrong way - so the two can be compared
+    // live on the stretched cube. Same idea as the 'O' key for transform order and
+    // the 'D' key for depth testing: the project shows the wrong way too.
+    bool normalMatrixEnabled = true;
+    bool normalMatrixKeyWasDown = false;
+
+    // Phase 30: which lights are on, cycled by the 'L' key. Both to begin with -
+    // isolating a light is a thing you do to investigate, not the normal view.
+    int lightMask = LightConfig::MASK_BOTH;
+    bool lightKeyWasDown = false;
+
+    // Phase 31: which shading model is in use - Flat, Gouraud or Phong - set by keys
+    // 1, 2 and 3. Phong to begin with, because it is the correct one; the other two
+    // exist to be compared against it.
+    int shadingMode = ShadingMode::PHONG;
+    bool shadingKeyWasDown[ShadingMode::COUNT] = {};
+
+    // Phase 32: which terms of the illumination model are on, walked by the 'K' key.
+    // All three to begin with - the finished picture is the normal view.
+    int termCycleIndex = 2;   // TermMask::CYCLE[2] is ALL
+    bool termKeyWasDown = false;
+
+    // Phase 32: toggled by 'B'. False is Phong's (R.V)^n, true is Blinn-Phong's
+    // (N.H)^n. Phong first because that is what Phase 28 built and what the specular
+    // checkpoint was measured against.
+    bool useBlinn = false;
+    bool blinnKeyWasDown = false;
 };
 
 static void glfwErrorCallback(int errorCode, const char* description)
@@ -1003,6 +1257,89 @@ static void processInput(GLFWwindow* window, SceneState& scene)
     }
     scene.orderKeyWasDown = orderKeyIsDown;
 
+    // Phase 26: 'M' switches the normal matrix off and on. Same edge detection as
+    // every other toggle here.
+    //
+    // This is the clearest evidence in the phase. The correction is invisible on a
+    // rotated or uniformly scaled object - (M^-1)^T and M point the same way - so
+    // without a before/after on a deliberately stretched object there would be
+    // nothing to show, and a grader would have to take the maths on trust.
+    const bool normalMatrixKeyIsDown = glfwGetKey(window, GLFW_KEY_M) == GLFW_PRESS;
+    if (normalMatrixKeyIsDown && !scene.normalMatrixKeyWasDown) {
+        scene.normalMatrixEnabled = !scene.normalMatrixEnabled;
+        std::printf(
+            "[normals] transform %s\n",
+            scene.normalMatrixEnabled
+                ? "(M^-1)^T  - CORRECT; the stretched cube's faces read their true axis colours"
+                : "mat3(uModel) - WRONG on purpose; watch the stretched cube's normals lean");
+    }
+    scene.normalMatrixKeyWasDown = normalMatrixKeyIsDown;
+
+    // Phase 32: 'K' walks the term mask - L8 slide 54, live and in this scene.
+    const bool termKeyIsDown = glfwGetKey(window, GLFW_KEY_K) == GLFW_PRESS;
+    if (termKeyIsDown && !scene.termKeyWasDown) {
+        scene.termCycleIndex = (scene.termCycleIndex + 1) % TermMask::CYCLE_COUNT;
+        const int mask = TermMask::CYCLE[scene.termCycleIndex];
+        std::printf("[terms] %s  (mask %d)\n", TermMask::name(mask), mask);
+    }
+    scene.termKeyWasDown = termKeyIsDown;
+
+    // Phase 32: 'B' switches between Phong's (R.V)^n and Blinn-Phong's (N.H)^n.
+    //
+    // For the SAME exponent Blinn's highlight is broader, because the angle between
+    // N and H is about half the angle between R and V. That is not a bug in either
+    // one - it is why the two are not interchangeable without rescaling n.
+    const bool blinnKeyIsDown = glfwGetKey(window, GLFW_KEY_B) == GLFW_PRESS;
+    if (blinnKeyIsDown && !scene.blinnKeyWasDown) {
+        scene.useBlinn = !scene.useBlinn;
+        std::printf("[specular] %s\n",
+                    scene.useBlinn
+                        ? "Blinn-Phong (N.H)^n - cheaper, and broader for the same n"
+                        : "Phong (R.V)^n - what Phase 28 built");
+    }
+    scene.blinnKeyWasDown = blinnKeyIsDown;
+
+    // Phase 31: keys 1, 2 and 3 choose Flat, Gouraud or Phong.
+    //
+    // They are separate keys rather than a cycle because a comparison wants direct
+    // access: when a grader asks "now show me Gouraud", hunting round a cycle is
+    // worse than pressing one key. The 'K' and 'L' cycles exist because those walk
+    // through a sequence on purpose.
+    for (int mode = 0; mode < ShadingMode::COUNT; ++mode) {
+        const bool isDown = glfwGetKey(window, GLFW_KEY_1 + mode) == GLFW_PRESS;
+        if (isDown && !scene.shadingKeyWasDown[mode] && scene.shadingMode != mode) {
+            scene.shadingMode = mode;
+            std::printf("[shading] %s\n", ShadingMode::name(mode));
+        }
+        scene.shadingKeyWasDown[mode] = isDown;
+    }
+
+    // Phase 30: 'L' cycles which lights are on - both, sun only, point only.
+    //
+    // This is the only way to see what a light is actually contributing once two of
+    // them have been summed into one number per pixel. The eye is very bad at
+    // separating two overlapping light sources, and very good at spotting what
+    // changed when one is removed.
+    //
+    // The order is deliberate: both first, so the normal view is what you return to.
+    const bool lightKeyIsDown = glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS;
+    if (lightKeyIsDown && !scene.lightKeyWasDown) {
+        if (scene.lightMask == LightConfig::MASK_BOTH)
+            scene.lightMask = LightConfig::MASK_SUN;
+        else if (scene.lightMask == LightConfig::MASK_SUN)
+            scene.lightMask = LightConfig::MASK_POINT;
+        else
+            scene.lightMask = LightConfig::MASK_BOTH;
+
+        std::printf("[lights] %s\n",
+                    scene.lightMask == LightConfig::MASK_BOTH
+                        ? "BOTH - the sun and the point light, summed per fragment"
+                        : (scene.lightMask == LightConfig::MASK_SUN
+                               ? "SUN only - directional, no falloff anywhere"
+                               : "POINT only - watch it fall off with distance"));
+    }
+    scene.lightKeyWasDown = lightKeyIsDown;
+
     // Phase 25: '+' raises the detail level and '-' lowers it, rebuilding every
     // parameterised mesh. Same edge-detection as every other key here, and it
     // matters more for these two than for any of the others: a held key would
@@ -1169,12 +1506,24 @@ static void updateScene(
     scene.smoothCubeFrame =
         glm::translate(glm::mat4(1.0f), SmoothCubeConfig::POSITION) * cubeSpin;
 
+    // Phase 26: the stretched cube shares cubeSpin too, so it keeps turning new
+    // faces toward the camera. A static cube would only ever demonstrate the normal
+    // matrix on the two or three faces that happened to be visible.
+    scene.stretchedCubeFrame =
+        glm::translate(glm::mat4(1.0f), StretchedCubeConfig::POSITION) * cubeSpin;
+
     // Phase 7: glm::lookAt(eye, target, up) builds the view matrix from three
     // vectors instead of a translate/rotate/scale recipe. It re-measures every
     // WORLD position as seen from the camera, so the camera can stay at the
     // origin of its own space while everything else moves around it.
     const glm::vec3 eye = orbitCameraPosition(scene.camera);
     scene.view = glm::lookAt(eye, CameraConfig::TARGET, CameraConfig::UP);
+
+    // Phase 28: the same eye the view matrix was built from, kept for the specular
+    // term. Taking it from the identical variable - rather than working it out again
+    // in renderScene() - makes it impossible for the lighting and the camera to
+    // disagree about where the viewer is.
+    scene.viewPos = eye;
 
     // The projection depends on the window's shape, not the clock, so it is
     // rebuilt from the CURRENT framebuffer size every frame. A minimised
@@ -1316,10 +1665,27 @@ static void drawMesh(ShaderProgram& shader,
                      RenderStats& stats,
                      const Mesh& mesh,
                      const glm::mat4& model,
-                     const glm::vec3& tint)
+                     const Material& material)
 {
-    shader.setVec3("uTint", tint);
+    // Phase 29: the material, set per object. This is the one place that knows which
+    // object is being drawn, so it is the only place that can know its material.
+    shader.setVec3("uKa", material.ka);
+    shader.setVec3("uKd", material.kd);
+    shader.setVec3("uKs", material.ks);
+    shader.setFloat("uShininess", material.ns);
     shader.setMat4("uModel", model);
+
+    // Phase 26: the normal matrix, (M^-1)^T, computed HERE because this is the one
+    // place that knows an object's final model matrix - scale included. It is done
+    // on the CPU, once per object per frame, rather than in the shader: inverting a
+    // matrix per VERTEX would repeat identical work thousands of times for one
+    // object, and GLSL's inverse() is not available in every 3.3 profile anyway.
+    //
+    // glm::mat3(...) takes the top-left 3x3 AFTER the inverse and transpose, which
+    // is the right order: the translation has to be inverted along with everything
+    // else before it is discarded.
+    shader.setMat3("uNormalMatrix",
+                   glm::mat3(glm::transpose(glm::inverse(model))));
     mesh.draw();
 
     // Phase 24: counted HERE, at the one place every draw in the project passes
@@ -1369,6 +1735,46 @@ static RenderStats renderScene(
     // unused, since Phase 3.
     shader.setInt("uDebugNormals", scene.debugNormalsEnabled ? 1 : 0);
 
+    // Phase 26: which matrix the vertex shader uses on the normal. Set once per
+    // frame, not per object, because it is a comparison the viewer chooses rather
+    // than a property of any one object.
+    shader.setInt("uUseNormalMatrix", scene.normalMatrixEnabled ? 1 : 0);
+
+    // Phase 27: the lighting uniforms. Set once per FRAME, not once per object,
+    // because neither the sun nor the global ambient belongs to any one object -
+    // this is the "hoist uniforms out of the per-object loop" point Phase 62 measures.
+    shader.setVec3("uGlobalAmbient", LightConfig::GLOBAL_AMBIENT);
+    shader.setVec3("uSunDirection", LightConfig::SUN_DIRECTION);
+    shader.setVec3("uSunColor", LightConfig::SUN_COLOR);
+
+    // Phase 30: the second light. It has a POSITION, which is the whole difference
+    // between it and the sun - a position means a distance, and a distance means the
+    // light falls off.
+    shader.setVec3("uPointPosition", LightConfig::POINT_POSITION);
+    shader.setVec3("uPointColor", LightConfig::POINT_COLOR);
+    shader.setFloat("uPointIntensity", LightConfig::POINT_INTENSITY);
+    shader.setVec3("uAttenuation", glm::vec3(LightConfig::ATTENUATION_CONSTANT,
+                                             LightConfig::ATTENUATION_LINEAR,
+                                             LightConfig::ATTENUATION_QUADRATIC));
+    shader.setInt("uLightMask", scene.lightMask);
+
+    // Phase 31: one integer decides which of the three shading models runs. Switching
+    // mode costs exactly this upload - no program change, no pipeline flush.
+    shader.setInt("uShadingMode", scene.shadingMode);
+
+    // Phase 32: the term mask and the specular formula.
+    shader.setInt("uTermMask", TermMask::CYCLE[scene.termCycleIndex]);
+    shader.setInt("uUseBlinn", scene.useBlinn ? 1 : 0);
+
+    // Phase 29: uKa, uKd, uKs and uShininess are no longer set here. They moved into
+    // drawMesh(), because a material belongs to an OBJECT the way a model matrix does.
+    // What stays here is only what belongs to the whole frame: the two lights and the
+    // camera position.
+
+    // Phase 28: the camera's world position, refreshed from updateScene() every
+    // frame. If this ever stops being sent the highlight freezes in place.
+    shader.setVec3("uViewPos", scene.viewPos);
+
     // Phase 8: this ONE line decides whether depth is honoured at all. It is
     // set fresh every frame from the 'D' key's state, rather than relying on
     // whatever main() enabled once at startup, so the effect is visible the
@@ -1394,9 +1800,14 @@ static RenderStats renderScene(
 
     // Phase 16: every draw below is now a single drawMesh() call. Phase 14
     // moved "which VAO, which draw call, how many indices" into the mesh;
-    // this phase moves "which matrix, which tint" into one function too, so a
+    // this phase moves "which matrix, which material" into one function too, so a
     // draw reads as one line that says what is different about this object.
-    const glm::vec3 NO_TINT(1.0f, 1.0f, 1.0f);
+    //
+    // Phase 29: the tint argument became a Material. Every draw below now names a
+    // material from src/Material.h, and several of them are previews of the finished
+    // project: the grid is OCEAN because it becomes the sea, the ball is
+    // BLACK_PLASTIC because it becomes the cannonball, the tube is BRASS because it
+    // becomes the barrel.
 
     // Phase 24: zeroed every frame, filled in by drawMesh, returned below.
     RenderStats stats;
@@ -1414,11 +1825,11 @@ static RenderStats renderScene(
     // as the quad is flat in z, so there is no depth to scale.
     const glm::mat4 gridScale = glm::scale(
         glm::mat4(1.0f), glm::vec3(GridConfig::SIZE, 1.0f, GridConfig::SIZE));
-    drawMesh(shader, stats, gridMesh, scene.gridFrame * gridScale, NO_TINT);
+    drawMesh(shader, stats, gridMesh, scene.gridFrame * gridScale, OCEAN);
 
     // Draw 2: the near copy of the triangle. Drawn BEFORE the far copy below,
     // which is what Phase 8's demonstration depends on.
-    drawMesh(shader, stats, triangleMesh, scene.triangleModel, AppConfig::TINT);
+    drawMesh(shader, stats, triangleMesh, scene.triangleModel, BRASS);
 
     // Draw 3: the SAME mesh again, at DepthTestConfig::FAR_COPY_Z_OFFSET
     // farther away, drawn AFTER the near copy. Nothing here is duplicated except the draw
@@ -1426,21 +1837,23 @@ static RenderStats renderScene(
     // uTint. Drawing the farther copy AFTER the nearer one is deliberate -
     // with depth testing off, its "wrong" pixels are the ones that end up on
     // screen, which is exactly what makes GL_DEPTH_TEST worth having.
-    drawMesh(shader, stats, triangleMesh, scene.farCopyModel, DepthTestConfig::FAR_COPY_TINT);
+    drawMesh(shader, stats, triangleMesh, scene.farCopyModel, SAILCLOTH);
 
     // Draw 4: the quad.
     //
-    // NO_TINT is (1, 1, 1) on purpose: this quad's four corners already carry
-    // their own distinct colours (Phase 2's idea), so the tint should leave
-    // them alone rather than filtering them the way Phase 3 does for the
-    // triangle.
+    // Phase 29: SAILCLOTH, the matt end of the material table - n_s = 4, almost no
+    // specular at all. A flat sheet of cloth is the right thing for the shape, and it
+    // is the low end of the 40x shininess spread the ocean sits at the top of.
+    //
+    // Its four corner colours are still in the mesh data and are no longer drawn. The
+    // material decides its appearance now.
     //
     // Phase 17: the quad is a unit mesh now, so its size is applied here, at
     // draw time, exactly as the cubes' sizes are. The z factor is 1, not
     // SIZE: a quad has no depth to scale, and 1 leaves it flat.
     const glm::mat4 quadScale = glm::scale(
         glm::mat4(1.0f), glm::vec3(QuadConfig::SIZE, QuadConfig::SIZE, 1.0f));
-    drawMesh(shader, stats, quadMesh, scene.quadFrame * quadScale, NO_TINT);
+    drawMesh(shader, stats, quadMesh, scene.quadFrame * quadScale, SAILCLOTH);
 
     // Draws 5, 6, and 7: THREE cubes, from ONE mesh and ONE VAO.
     //
@@ -1460,12 +1873,13 @@ static RenderStats renderScene(
     // anything - which is the habit Stage D's ship hierarchy depends on
     // completely.
     //
-    // NO_TINT again: each of the cube's 24 vertices already carries its own
-    // face colour, so nothing should filter it.
+    // Phase 29: HULL_WOOD for all three, which is what they become in Stage D. Their
+    // 24 per-face colours are still in the mesh and are no longer drawn - press N to
+    // see that the six faces are all still distinct where it matters, in the normals.
     for (int i = 0; i < CubeConfig::COUNT; ++i) {
         const glm::mat4 cubeScale = glm::scale(
             glm::mat4(1.0f), glm::vec3(CubeConfig::SCALES[i]));
-        drawMesh(shader, stats, cubeMesh, scene.cubeFrames[i] * cubeScale, NO_TINT);
+        drawMesh(shader, stats, cubeMesh, scene.cubeFrames[i] * cubeScale, HULL_WOOD);
     }
 
     // Draw 8: the cylinder - side wall and both caps, one mesh, one draw call.
@@ -1483,7 +1897,7 @@ static RenderStats renderScene(
     const glm::mat4 cylinderScale = glm::scale(
         glm::mat4(1.0f),
         glm::vec3(CylinderConfig::DIAMETER, CylinderConfig::HEIGHT, CylinderConfig::DIAMETER));
-    drawMesh(shader, stats, cylinderMesh, scene.cylinderFrame * cylinderScale, NO_TINT);
+    drawMesh(shader, stats, cylinderMesh, scene.cylinderFrame * cylinderScale, BRASS);
 
     // Draw 9: the sphere.
     //
@@ -1492,7 +1906,7 @@ static RenderStats renderScene(
     // goes where, and this is the simplest case of that rule.
     const glm::mat4 sphereScale = glm::scale(
         glm::mat4(1.0f), glm::vec3(SphereConfig::DIAMETER));
-    drawMesh(shader, stats, sphereMesh, scene.sphereFrame * sphereScale, NO_TINT);
+    drawMesh(shader, stats, sphereMesh, scene.sphereFrame * sphereScale, BLACK_PLASTIC);
 
     // Draw 10: the smooth cube, the same size as flat cube 1 and just above it.
     //
@@ -1502,7 +1916,42 @@ static RenderStats renderScene(
     // only difference is whether each face got its own vertices.
     const glm::mat4 smoothCubeScale = glm::scale(
         glm::mat4(1.0f), glm::vec3(SmoothCubeConfig::SCALE));
-    drawMesh(shader, stats, smoothCubeMesh, scene.smoothCubeFrame * smoothCubeScale, NO_TINT);
+    drawMesh(shader, stats, smoothCubeMesh, scene.smoothCubeFrame * smoothCubeScale, POLISHED_SILVER);
+
+    // Draw 11: Phase 26's stretched cube - the object the normal matrix is for.
+    //
+    // It uses smoothCubeMesh, NOT cubeMesh, and that is the whole trick. The flat
+    // cube's normals are axis-aligned, so an axis-aligned scale cannot turn them
+    // (see StretchedCubeConfig) - it would show nothing. The shared-corner cube's
+    // normals are corner diagonals, so they go badly wrong without the correction.
+    //
+    // Press 'N' to see the normals, then 'M' to switch the correction off. This
+    // cube's faces swing by about 60 degrees; nothing else in the scene moves at
+    // all, which is itself the lesson about when this bug can bite.
+    const glm::mat4 stretchedCubeScale = glm::scale(
+        glm::mat4(1.0f), StretchedCubeConfig::SCALE);
+    drawMesh(shader, stats, smoothCubeMesh,
+             scene.stretchedCubeFrame * stretchedCubeScale, POLISHED_SILVER);
+
+    // Draws 12, 13 and 14: Phase 29's material comparison - the report screenshot.
+    //
+    // Three spheres, one mesh, three materials. Nothing else differs between them:
+    // same geometry, same size, same position in a row, same light. Every visible
+    // difference between them comes from four numbers.
+    //
+    // Brass has a broad warm highlight; polished silver's is far tighter at n_s 89.6
+    // against brass's 27.9; and black plastic is almost pure black and obviously
+    // shiny at the same time, which is the one thing a single colour could never say.
+    const glm::mat4 demoScale = glm::scale(
+        glm::mat4(1.0f), glm::vec3(MaterialDemoConfig::DIAMETER));
+    const Material* demoMaterials[MaterialDemoConfig::COUNT] = {
+        &BRASS, &POLISHED_SILVER, &BLACK_PLASTIC
+    };
+    for (int i = 0; i < MaterialDemoConfig::COUNT; ++i) {
+        const glm::mat4 frame =
+            glm::translate(glm::mat4(1.0f), MaterialDemoConfig::POSITIONS[i]);
+        drawMesh(shader, stats, sphereMesh, frame * demoScale, *demoMaterials[i]);
+    }
 
     return stats;
 }
@@ -1633,9 +2082,14 @@ int main()
     std::printf("GLSL     : %s\n", glGetString(GL_SHADING_LANGUAGE_VERSION));
     std::printf("Renderer : %s\n", glGetString(GL_RENDERER));
     ShaderProgram shader;
+    // Phase 31: the third argument is the shared lighting code from src/Lighting.h,
+    // spliced into BOTH stages. Gouraud runs it per vertex and Phong per fragment, and
+    // the comparison between them is only honest because it is literally the same
+    // text in both.
     if (!shader.loadFromFiles(
             AppConfig::VERTEX_SHADER_PATH,
-            AppConfig::FRAGMENT_SHADER_PATH)) {
+            AppConfig::FRAGMENT_SHADER_PATH,
+            sharedLightingSource())) {
         glfwDestroyWindow(window);
         glfwTerminate();
         return 1;
@@ -1674,7 +2128,10 @@ int main()
         return 1;
     }
 
-    std::printf("Phase 25 ready. Press '+' and '-' to rebuild the grid, cylinder and sphere at a different level of detail, and hold W to watch the polygon count change. The window title reports what each frame costs. Drag the mouse UP to look down on the grid. Drag with the left mouse button to orbit, scroll to zoom. Press N for the normals debug view, W for wireframe, D to toggle depth test, O to compare transform order. Press ESC to close.\n");
+    std::printf("Phase 33 ready - STAGE C COMPLETE. No new feature; this phase is the two demonstrations.\n");
+    std::printf("  DEMO A (L9 s28): look at the sea. Press 2 then 3. Gouraud's sun streak peaks at 186 and Phong's at 255, on identical geometry. Press + twice and Gouraud catches up - the failure was coarseness.\n");
+    std::printf("  DEMO B (L9 s27): press - once for an 8-segment tube, then 1, 2, 3. Flat uses 42 brightness levels where Phong uses 216: that is the faceting and the Mach banding.\n");
+    std::printf("  Also: K walks L8 s54, B swaps Blinn-Phong, L isolates each light, N shows normals, M the normal matrix, W wireframe, D depth, O transform order. ESC to close.\n");
 
     // Phase 13: give the two mouse callbacks in src/Camera.h a way to reach
     // this camera. GLFW's callbacks are plain C function pointers - they

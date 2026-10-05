@@ -35,7 +35,20 @@ public:
     ShaderProgram(const ShaderProgram&) = delete;
     ShaderProgram& operator=(const ShaderProgram&) = delete;
 
-    bool loadFromFiles(const char* vertexPath, const char* fragmentPath)
+    // Phase 31: 'commonSource' is GLSL text injected into BOTH stages, immediately
+    // after each file's #version line.
+    //
+    // This exists so that the lighting calculation can live in exactly ONE place
+    // while running in two different shaders. Gouraud shading evaluates it per
+    // VERTEX and Phong per FRAGMENT, and the entire point of comparing them is that
+    // the only difference is WHERE it runs - so if the two stages had their own
+    // copies of the formula, a typo in one would make the comparison a lie.
+    //
+    // It is injected after #version rather than before it because GLSL requires
+    // #version to be the first thing in the file, before even a comment.
+    bool loadFromFiles(const char* vertexPath,
+                       const char* fragmentPath,
+                       const std::string& commonSource = std::string())
     {
         destroy();
 
@@ -45,6 +58,13 @@ public:
         if (!readTextFile(vertexPath, vertexSource) ||
             !readTextFile(fragmentPath, fragmentSource)) {
             return false;
+        }
+
+        if (!commonSource.empty()) {
+            if (!injectAfterVersion(vertexSource, commonSource, vertexPath) ||
+                !injectAfterVersion(fragmentSource, commonSource, fragmentPath)) {
+                return false;
+            }
         }
 
         const GLuint vertexShader = compileShader(
@@ -130,6 +150,15 @@ public:
         glUniformMatrix4fv(uniformLocation(name), 1, GL_FALSE, glm::value_ptr(value));
     }
 
+    // Phase 26: a 3x3 matrix, for the normal matrix. Normals are DIRECTIONS, so
+    // they never need the translation part of a 4x4 - and leaving it out is not
+    // only cheaper, it is the only correct thing to do. Translating a direction
+    // would be meaningless (Phase 4's w = 0 rule, expressed as a smaller matrix).
+    void setMat3(const char* name, const glm::mat3& value)
+    {
+        glUniformMatrix3fv(uniformLocation(name), 1, GL_FALSE, glm::value_ptr(value));
+    }
+
     bool valid() const
     {
         return m_id != 0;
@@ -181,6 +210,35 @@ private:
         }
 
         return location;
+    }
+
+    // Phase 31: puts 'common' straight after the #version line of 'source'.
+    //
+    // GLSL insists that #version is the very first token in a shader, so the shared
+    // block cannot simply be stuck on the front. Finding the end of that first line
+    // and splicing after it keeps the file valid and keeps the line numbers in any
+    // compiler error message pointing at sensible places.
+    static bool injectAfterVersion(std::string& source,
+                                   const std::string& common,
+                                   const char* path)
+    {
+        const std::string::size_type versionAt = source.find("#version");
+        if (versionAt == std::string::npos) {
+            std::fprintf(stderr,
+                         "[shader] '%s' has no #version line, so the shared lighting "
+                         "code cannot be injected\n",
+                         path);
+            return false;
+        }
+
+        const std::string::size_type lineEnd = source.find('\n', versionAt);
+        if (lineEnd == std::string::npos) {
+            std::fprintf(stderr, "[shader] '%s' is only a #version line\n", path);
+            return false;
+        }
+
+        source.insert(lineEnd + 1, common);
+        return true;
     }
 
     static bool readTextFile(const char* path, std::string& text)

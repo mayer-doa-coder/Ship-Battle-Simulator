@@ -1,67 +1,101 @@
 #version 330 core
+// ^ src/Lighting.h's shared lighting block is spliced in immediately below this
+//   line, by ShaderProgram::loadFromFiles(). It brings in uShadingMode, the
+//   material uniforms, the light uniforms, lightContribution() and
+//   computeLighting(). Do NOT declare those again here.
 
-// Attribute 0: this vertex's position, measured from its mesh's own centre.
-layout (location = 0) in vec3 aPosition;
+// Phase 2: the three per-vertex inputs, matching the layout src/Mesh.h records.
+// A vertex carries one position, one normal and one colour (Phase 14).
+layout(location = 0) in vec3 aPosition;
+layout(location = 1) in vec3 aNormal;
+layout(location = 2) in vec3 aColor;
 
-// Phase 14: attribute 1 is the NORMAL - which way the surface faces at this
-// vertex. Phase 15 is the first phase to actually read it: it is passed
-// straight through to the fragment shader, which can paint it as a colour so
-// every normal in the scene can be checked by eye.
-layout (location = 1) in vec3 aNormal;
-
-// Phase 14: the colour moved from attribute 1 to attribute 2 to make room for
-// the normal. `Mesh` sets up all three attributes from the one `Vertex`
-// struct, so these numbers and that struct's field order must agree.
-layout (location = 2) in vec3 aColor;
-
-// Phase 4: the model matrix. It is a uniform (Phase 3), so all three vertices
-// receive the SAME matrix and the triangle moves as one rigid piece.
-// It answers one question: where does this object sit, and how is it turned?
-// Phase 5 and 6 needed NO change to this file: a matrix can hold a move, a
-// turn, and a resize together, and this shader multiplies by whatever matrix
-// it is given.
+// Phases 4-7: the three matrices a vertex passes through on its way to the screen.
 uniform mat4 uModel;
-
-// Phase 7: two more matrices, applied in the same way.
-//   uView       - turns WORLD-space coordinates into CAMERA-space coordinates.
-//                 It answers "where is the camera, and which way is it facing?"
-//   uProjection - turns camera-space coordinates into clip space, adding the
-//                 perspective divide that makes far things look smaller.
-// Before this phase, uModel's output went straight to gl_Position, so every
-// object lived in the same flat -1..+1 box the screen shows directly. Now a
-// vertex passes through three matrices before it reaches the screen.
 uniform mat4 uView;
 uniform mat4 uProjection;
 
-// Sent to the fragment shader. OpenGL smoothly blends this value between vertices.
+// Phase 26: THE NORMAL MATRIX, (M^-1)^T, reduced to its top-left 3x3 and computed on
+// the CPU once per object per frame.
+//
+// A position and a direction are different kinds of thing, and an uneven scale
+// treats them as opposites. Squash a surface downward and its normals must become
+// MORE vertical, not less - and (M^-1)^T is exactly the matrix that does that.
+//
+// For a rotation alone, or a uniform scale, it points the same way as uModel and
+// changes nothing visible, which is why the bug hides until something is stretched
+// unevenly. It is a mat3 because a normal is a direction: w = 0, so the translation
+// column could never affect it anyway (Phase 4).
+uniform mat3 uNormalMatrix;
+
+// Phase 26: 1 uses the normal matrix, 0 deliberately uses mat3(uModel) - the naive,
+// wrong way - so the two can be compared live with the 'M' key.
+uniform int uUseNormalMatrix;
+
+// Phase 29: still passed on, but nothing reads it. The per-vertex colour was the
+// stand-in for a material from Phase 2 to Phase 28; src/Material.h has replaced it.
+// The attribute stays because removing it would mean rebuilding every generator and
+// would invalidate the byte-identical frame evidence from Phases 14 and 17.
 out vec3 vColor;
 
-// Phase 15: the normal, handed on unchanged so the fragment shader can paint
-// it. It is deliberately still in the mesh's OWN space here - no matrix is
-// applied to it - because what this phase needs to verify is the number the
-// generator stored, not where that surface has been moved to. Phase 26 gives
-// it the normal matrix, which is what makes a non-uniformly scaled object
-// show its normals correctly.
+// Phase 15/26: the normal, in WORLD space after the normal matrix. The fragment
+// shader needs it there, because the light directions are in world space too.
 out vec3 vNormal;
+
+// Phase 28: this vertex's position in world space, for the view direction.
+out vec3 vWorldPos;
+
+// Phase 31: the GOURAUD result.
+//
+// When uShadingMode is Gouraud this holds the finished colour of this vertex, and
+// the rasteriser blends those colours across the triangle. In the other two modes
+// nothing is computed here and the fragment shader does the work instead.
+out vec3 vLitColor;
 
 void main()
 {
-    // A position must have four components before OpenGL can use it.
-    // w = 1.0 means this value represents a position, and only w = 1 lets the
-    // translation part of a matrix move it.
-    //
-    // Matrices go on the LEFT of the vector, and are read right to left:
-    //   1. uModel      - place the vertex in the WORLD (Phases 4-6);
-    //   2. uView        - re-measure that world position from the CAMERA;
-    //   3. uProjection  - flatten camera space into clip space, with the
-    //                      perspective divide GPU hardware performs
-    //                      automatically after this shader runs.
+    // Matrices go on the LEFT and are read right to left (Phase 6):
+    //   1. uModel      - place the vertex in the WORLD;
+    //   2. uView       - re-measure that position from the CAMERA;
+    //   3. uProjection - flatten camera space into clip space.
+    // w = 1.0 because this is a POSITION, and only w = 1 lets a matrix's
+    // translation part move it.
     gl_Position = uProjection * uView * uModel * vec4(aPosition, 1.0);
+
     vColor = aColor;
 
-    // Phase 15: passed on as it is. Note there is no vec4 and no w component
-    // here, because nothing is being multiplied by a matrix yet. When Phase 26
-    // does transform it, the rule from Phase 4 applies: a normal is a
-    // DIRECTION, so it would use w = 0, never w = 1.
-    vNormal = aNormal;
+    // Phase 28: w = 1.0 again, because this IS a position - the translation must
+    // apply. Only uModel, never uView or uProjection: the normal, both light
+    // positions and the view position all have to be in the same space, and this
+    // project uses world space throughout.
+    vWorldPos = vec3(uModel * vec4(aPosition, 1.0));
+
+    // Phase 26: mat3(uModel) is the naive version. It treats a direction exactly
+    // like a position, which is only correct when the model matrix has no uneven
+    // scale in it.
+    mat3 normalTransform = (uUseNormalMatrix != 0) ? uNormalMatrix : mat3(uModel);
+
+    // normalize() is not optional. The normal matrix is built from a matrix
+    // containing a scale, so it stretches the vector's LENGTH even while it fixes its
+    // DIRECTION - measured, by a factor of 2.4 to 3.1 on the stretched cube.
+    vNormal = normalize(normalTransform * aNormal);
+
+    // Phase 31: GOURAUD. The lighting is evaluated HERE, once per vertex, and the
+    // result is interpolated across the triangle by the rasteriser.
+    //
+    // Note what gets interpolated: a COLOUR. That is the whole reason Gouraud misses
+    // a highlight that falls between two vertices - there is no vertex there to
+    // compute it at, so no amount of blending can invent it (L9 s28).
+    //
+    // computeLighting() comes from the shared block in src/Lighting.h, and the
+    // fragment shader calls the SAME function for Phong. That is what makes the two
+    // modes genuinely comparable rather than two separate pieces of code that happen
+    // to look similar.
+    //
+    // The branch means the other two modes do not pay for work they will not use.
+    if (uShadingMode == 1) {
+        vLitColor = computeLighting(vNormal, vWorldPos);
+    } else {
+        vLitColor = vec3(0.0);
+    }
 }
