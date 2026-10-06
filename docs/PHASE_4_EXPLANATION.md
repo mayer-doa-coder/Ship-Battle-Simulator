@@ -83,7 +83,7 @@ matrix, and that column is multiplied by `w`:
 
 That is correct behaviour. Moving a house changes where it is. It does not
 change which way north points. Directions such as the barrel's forward axis
-(Phase 45) rely on this rule.
+(Phase 86) rely on this rule.
 
 ## Where each job happens
 
@@ -110,8 +110,8 @@ offsetX = SLIDE_DISTANCE * sin(SLIDE_SPEED * now)
 `now` is `glfwGetTime()`, so the position is worked out fresh every frame from
 the clock. **Nothing is stored between frames, and no list of positions exists.**
 That is exactly what the project rule "no pre-computed animation" requires:
-autonomous motion must be a formula of the current time. Wave motion in Phase 40
-and the sail flutter in Phase 43 work the same way.
+autonomous motion must be a formula of the current time. Wave motion in Phase 81
+and the sail flutter in Phase 84 work the same way.
 
 ## Important changeable values
 
@@ -208,7 +208,7 @@ saved. There is no array of positions and no keyframes.
 
 `deltaTime` is for motion that responds to the player, such as steering, where
 you add a little each frame. This motion is a formula of absolute time instead,
-so it uses `now`. `deltaTime` is used first in Phase 38.
+so it uses `now`. `deltaTime` is used first in Phase 79.
 
 ### Why does the triangle not stretch or turn?
 

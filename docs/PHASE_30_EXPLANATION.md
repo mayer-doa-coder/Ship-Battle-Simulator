@@ -61,7 +61,7 @@ there is exactly one of each kind.
 | Distance to a surface | undefined - it is infinitely far away | a real number |
 | Falloff | none at all (L8 s19) | `1/(a0 + a1·d + a2·d²)` (L8 s21) |
 | On a flat floor | identical brightness everywhere | a pool, brightest underneath it |
-| Becomes | the sun | the muzzle flash (Phase 49) |
+| Becomes | the sun | the muzzle flash (Phase 90) |
 
 Having one of each makes the difference something you can **see** rather than
 something you have to be told.
@@ -187,7 +187,7 @@ const float POINT_INTENSITY = 3.2f;
 ```
 
 In the finished project this light becomes the **muzzle flash**: it will sit at the
-cannon's muzzle and be alive for about 0.15 seconds after firing (Phase 49). Here it
+cannon's muzzle and be alive for about 0.15 seconds after firing (Phase 90). Here it
 sits still, just above the floor, so that its falloff can be studied in a single
 frame rather than in a fifteenth of a second.
 
@@ -297,7 +297,7 @@ Phase 30 passes when:
 
 No third light, ever. No shadows - a local model cannot compute them, which is the
 same reason ambient exists. No flicker or timing on the point light: it becomes the
-muzzle flash in Phase 49, where it gets a 0.15 second life tied to firing.
+muzzle flash in Phase 90, where it gets a 0.15 second life tied to firing.
 
 No shading-mode comparison yet. Phase 31 is the **graded milestone** of Stage C:
 `uniform int uShadingMode` with one branch in **one** program, giving Flat, Gouraud

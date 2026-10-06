@@ -52,6 +52,15 @@ out vec3 vWorldPos;
 // nothing is computed here and the fragment shader does the work instead.
 out vec3 vLitColor;
 
+// Environment build: the clip plane of the planar reflection pass (dot(world position, plane) < 0 is cut away; the pass switches GL_CLIP_DISTANCE0 on),
+// and how much white water the sea has at this vertex. Both are inert outside those passes.
+uniform vec4 uClipPlane;
+out float vSeaFoam;
+
+// Environment build: THE HOLD. The hull is a closed shell whose normals point out of the ship; seen from INSIDE (the camera is below decks) it is drawn with the faces
+// culled the other way round and its normals turned to face the camera. 0 for everything else.
+uniform int uFlipNormals;
+
 void main()
 {
     // Matrices go on the LEFT and are read right to left (Phase 6):
@@ -69,6 +78,7 @@ void main()
     // positions and the view position all have to be in the same space, and this
     // project uses world space throughout.
     vWorldPos = vec3(uModel * vec4(aPosition, 1.0));
+    vSeaFoam = 0.0;
 
     // Phase 26: mat3(uModel) is the naive version. It treats a direction exactly
     // like a position, which is only correct when the model matrix has no uneven
@@ -79,6 +89,28 @@ void main()
     // containing a scale, so it stretches the vector's LENGTH even while it fixes its
     // DIRECTION - measured, by a factor of 2.4 to 3.1 on the stretched cube.
     vNormal = normalize(normalTransform * aNormal);
+
+    // Environment build: THE SEA. When the sea is being drawn (uSeaMode = 1) every vertex is lifted to the height of the waves at its WORLD x and z -
+    // the world's, not the mesh's, so the waves stay put in the world when the sea mesh slides along with the ship - and the normal comes from the
+    // waves' slope instead of the mesh's flat +y. Everything lit afterwards (Flat, Gouraud, Phong, the haze, the specular streak) therefore sees the
+    // swell. For every other object uSeaMode is 0 and this block does nothing at all, so the rest of the scene and the gallery are untouched.
+    if (uSeaMode != 0) {
+        float lift = seaWaveHeight(vWorldPos.xz);
+        vWorldPos.y += lift;
+        gl_Position = uProjection * uView * vec4(vWorldPos, 1.0);
+        vNormal = seaWaveNormal(vWorldPos.xz);
+
+        // White water: a vertex near the top of the highest possible crest, broken up by a slow pattern so the foam lies in patches and not in bands.
+        float crest = lift / max(uWaveScale * SEA_AMPLITUDE_SUM, 0.0001);
+        float patches = 0.65 + 0.35 * sin(vWorldPos.x * 1.7 + vWorldPos.z * 2.3 + uWaveTime * 1.1);
+        vSeaFoam = uFoam * smoothstep(0.42, 0.85, crest) * patches;
+    }
+
+    if (uFlipNormals != 0)
+        vNormal = -vNormal;
+
+    // Planar reflection: the distance of this vertex from the mirror plane (see renderScene). Positive = kept.
+    gl_ClipDistance[0] = dot(vec4(vWorldPos, 1.0), uClipPlane);
 
     // Phase 31: GOURAUD. The lighting is evaluated HERE, once per vertex, and the
     // result is interpolated across the triangle by the rasteriser.
@@ -93,6 +125,12 @@ void main()
     // to look similar.
     //
     // The branch means the other two modes do not pay for work they will not use.
+    // Phase 45: computeLighting() cannot see this stage's attribute, so the vertex colour is
+    // handed to it through a global it reads (declared in the shared block). The fragment shader
+    // does the same with the interpolated colour. Only a material with uKeFromVertexColor set
+    // ever looks at it; for every other draw it is multiplied away or never read.
+    gVertexColor = aColor;
+
     if (uShadingMode == 1) {
         vLitColor = computeLighting(vNormal, vWorldPos);
     } else {

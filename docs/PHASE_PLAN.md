@@ -19,6 +19,13 @@ into one concept each, which moved Stage A from 4 phases to 11 and Stage B from
 but moved up by 14 numbers: the old Phase 12 is now Phase 26, and the old final
 Phase 52 is now Phase 66.
 
+**Renumbered again on 5 October 2026.** Stage D was widened from the four-phase ship
+hierarchy into a full pirate-galleon build, which inserted 41 new phases (38 to 78) and
+moved Stage E onward up by 41 numbers: the old Phase 38 (player control) is now Phase 79,
+and the old final Phase 66 is now Phase 107. Every reference to a later phase in the plan,
+the README, `AGENT.md`, the phase documents, the two stage reviews and the source comments
+was shifted by the same amount. Phases 0-37 and their documents keep their numbers.
+
 ## Completed
 
 | Phase | Outcome | Document |
@@ -49,31 +56,71 @@ Phase 52 is now Phase 66.
 | 23 * | `computeSmoothNormals()` - the L9 slide 20 averaging formula - plus a cube from 8 SHARED corners to demonstrate it on. No new shape. In the `N` view the flat cube shows 3 colours and the smooth one 15 952; running the formula on the flat cube provably changes nothing | [PHASE_23_EXPLANATION.md](PHASE_23_EXPLANATION.md) |
 | 24 (o) | Live per-frame counters in the window title - draw calls, triangles and vertices - accumulated inside `drawMesh()`, so they MEASURE what was drawn instead of predicting it from the config. `640` triangles across `10` draws, hand-checked | [PHASE_24_EXPLANATION.md](PHASE_24_EXPLANATION.md) |
 | 25 | `rebuildMeshes()` on `+` and `-`: one clamped detail level, each mesh deriving its divisions from its level-0 constant so `-` then `+` is exactly reversible. Six levels, 92 to 36,116 triangles, with the draw count fixed at 10. 100 rebuilds leak nothing, proven against a negative control | [PHASE_25_EXPLANATION.md](PHASE_25_EXPLANATION.md) |
+| 26 | The normal matrix `(M^-1)^T`, computed on the CPU per object and applied with a renormalise. Demonstrated on the SHARED-corner cube, because a flat axis-aligned cube cannot show the bug (its normals only change length). `M` key toggles it | [PHASE_26_EXPLANATION.md](PHASE_26_EXPLANATION.md) |
+| 27 | Ambient plus diffuse from one directional sun (Lambert, `max(N.L, 0)`); `normalize()` on the interpolated normal. The two terms sum exactly | [PHASE_27_EXPLANATION.md](PHASE_27_EXPLANATION.md) |
+| 28 * | The specular term `(R.V)^n` with `uViewPos`; the highlight sits within 1 pixel of the analytic prediction as the camera orbits | [PHASE_28_EXPLANATION.md](PHASE_28_EXPLANATION.md) |
+| 29 | `src/Material.h`: the L8 slide 60 table (brass, polished silver, black plastic verbatim) plus tuned ocean, hull wood, sailcloth; three spheres from one mesh | [PHASE_29_EXPLANATION.md](PHASE_29_EXPLANATION.md) |
+| 30 | A point light with attenuation `1/(a0 + a1 d + a2 d^2)`, the lighting moved into one function called once per light, and the `L` key | [PHASE_30_EXPLANATION.md](PHASE_30_EXPLANATION.md) |
+| 31 * | Flat, Gouraud and Phong in ONE shader program (`uShadingMode`), the lighting written once in `src/Lighting.h` and spliced into both stages; keys `1`/`2`/`3` | [PHASE_31_EXPLANATION.md](PHASE_31_EXPLANATION.md) |
+| 32 | The `K` term mask (L8 slide 54, the three terms sum within 0.2 of 255 levels) and the `B` Blinn-Phong toggle | [PHASE_32_EXPLANATION.md](PHASE_32_EXPLANATION.md) |
+| 33 * | Verification only: Demo A (Gouraud misses the sea's highlight, Phong's image is identical across tessellations) and Demo B (Flat banding on an 8-segment brass tube), measured | [PHASE_33_EXPLANATION.md](PHASE_33_EXPLANATION.md) |
+| 34 * | `src/Ship.h`: root, hull and deck frames, all rigid motions; scale applied only in the model functions, so the deck is never stretched like the hull. No OpenGL in the file | [PHASE_34_EXPLANATION.md](PHASE_34_EXPLANATION.md) |
+| 35 | The rigging chain: two masts, each mast -> yard -> sail (drawn from both sides), and a flag hung from the main yard. A bug found by the tests: the back flag first landed on the wrong side of the mast | [PHASE_35_EXPLANATION.md](PHASE_35_EXPLANATION.md) |
+| 36 | The cannon chain: mount -> yoke (azimuth) -> barrel (elevation `R_x(-el)`) -> muzzle, with `MUZZLE_Z` readable as a position (`w=1`) and a direction (`w=0`). Matches a closed form at 78 aims to 7e-08 | [PHASE_36_EXPLANATION.md](PHASE_36_EXPLANATION.md) |
+| 37 * | The hierarchy proof: a root pose, a 45 degree root roll that carries all 18 frames exactly, and the `H` key clearing roll and pitch only. Ends the hierarchy method; the galleon build follows at Phase 38 | [PHASE_37_EXPLANATION.md](PHASE_37_EXPLANATION.md) |
+
+| 38 * | `scaleShipDimensions(d, k)` multiplies the ship's lengths (data, never a matrix); the program opens on a showcase - a sea 120 across and the ship at 4x - and `G` swaps in the Stage C gallery, byte-identical to Phase 33 with the ship hidden and to Phase 37 with it shown | [PHASE_38_EXPLANATION.md](PHASE_38_EXPLANATION.md) |
+
+| 39 | `src/CameraPresets.h`: five named `(yaw, pitch, radius, target)` views on `F1` to `F5`, `R` back to `F1`; radius and target in hull lengths so they follow the ship's scale. All five frame the whole ship, heeled and level | [PHASE_39_EXPLANATION.md](PHASE_39_EXPLANATION.md) |
+
+| 40 | `CameraEase`: a preset glides in over `EASE_SECONDS` (smoothstep, driven by `dt`), the short way round via `wrapAngle()`, arriving on the preset's exact numbers; a drag or scroll cancels it. Arrival is byte-identical to the Phase 39 jump | [PHASE_40_EXPLANATION.md](PHASE_40_EXPLANATION.md) |
+
+| 41 | `applyCameraKeys()`: `,` `.` yaw, `PageUp` `PageDown` pitch, `Q` `E` zoom, as held keys scaled by `dt` (zoom multiplicative). The same rate at 30 to 240 FPS, the pitch and radius limits hold at every frame, a key that moves the camera cancels a preset move | [PHASE_41_EXPLANATION.md](PHASE_41_EXPLANATION.md) |
+
+| 42 | 4x MSAA by a window hint (`AppConfig::MSAA_SAMPLES`), the real sample count read back and reported, a retry without samples if the window is refused, and `GL_MULTISAMPLE` on in the showcase and off in the gallery. Partly-covered edge pixels 524 to 3040; the gallery (ship hidden) stays byte-identical to Phase 33 | [PHASE_42_EXPLANATION.md](PHASE_42_EXPLANATION.md) |
+
+| 43 | `LightProfile` (sun, ambient, clear colour, test-light switch): Stage C's constants for the gallery, golden hour for the showcase - a 19-degree warm sun, a sky-blue ambient, a horizon-coloured background. Sunlit sail cloth measures red 1.99x blue, shaded cloth is blue-above-red, in all three shading modes; the Stage C pictures return byte for byte | [PHASE_43_EXPLANATION.md](PHASE_43_EXPLANATION.md) |
+
+| 44 | The emission term: `Material::ke` (default zero) and `uKe`, added at the end of the one `computeLighting()` so Flat, Gouraud and Phong all honour it; unaffected by `L`, `K` or the shading mode (216 exact pixels), added equally to lit and shaded faces, reset on every draw. With `ke` zero every earlier picture is byte-identical | [PHASE_44_EXPLANATION.md](PHASE_44_EXPLANATION.md) |
+
+| 45 | `src/Sky.h` and the sky: the sphere mesh seen from inside, centred on the camera, a horizon-to-zenith gradient in its vertices (exact at the equator), drawn as emission; the sun's disc at `eye + L x 80` covering 3 degrees (0.0000 degrees from the light direction); and a squared-distance haze (`uHazeColor`, `uHazeDensity`, exactly zero in the Stage C profile). The sea is 160 across and meets the sky with no seam (adjacent rows differ by at most 4 levels). Showcase 17 draws / 2548 triangles; gallery unchanged | [PHASE_45_EXPLANATION.md](PHASE_45_EXPLANATION.md) |
+
+| 46 (o) | `src/Islands.h`: nine hills and sea stacks from a bearing/distance/width/height table, drawn with the existing sphere and cylinder, 38 to 56 units out where the Phase 45 haze turns them into a faint dark coastline (mean change 6 of 255; 38 and solid black without the haze). A fixed 9 draws at every detail level; 34 units clear of the ship. Ends Stage D2 | [PHASE_46_EXPLANATION.md](PHASE_46_EXPLANATION.md) |
+
+| 47 * | `src/Hull.h` and `makeHull`: a lofted hull from a 10-station table (`halfBeam`, `keelRise`, `sheer`, all fractions), faired with PCHIP into 41 rings of 25 points, three surfaces (sides, cap, transom) joined at creases. A closed solid (Euler 2) 3.889 times as long as it is wide; the hull equals its table to 3e-08; no hole from seven viewpoints; the deck sits at the lowest gunwale and the masts and cannon stand on it. Earlier Stage D tests pass (two assertions restated) | [PHASE_47_EXPLANATION.md](PHASE_47_EXPLANATION.md) |
+
+| 48 | `uVertexAlbedo` / `Material::vertexAlbedo`: the vertex colour multiplies `k_a` and `k_d` (never the specular), per material and off for every old one; the hull moves to `HULL_TIMBER` with white vertices. Every earlier picture byte-identical to Phase 47; a striped test mesh shows `B/A = 0.503 0.248 0.750` in Flat, Gouraud and Phong; with the switch off the stripes vanish to the byte | [PHASE_48_EXPLANATION.md](PHASE_48_EXPLANATION.md) |
+
+| 49 | Hull planking from vertex colours: 12 strakes (6 bilge, 6 topsides) in alternating light and dark shades, three dark belts placed by fraction (waterline strake, deck line, gunwale rail), the cap and transom their own colours. A second pass in `buildHullGeometry` gives every plank its own vertices with the shared mesh's normals, so edges are crisp in colour and invisible in lighting; 2033 vertices, the same 2022 triangles. Planks 2 to 12 verified against pixels (within 4 of 255) | [PHASE_49_EXPLANATION.md](PHASE_49_EXPLANATION.md) |
+
+| 50 | Deck levels: `DeckLevelDimensions` (z span, floor height, inset) for the quarterdeck, the poop (the quarterdeck's child) and the forecastle; three unscaled frames; each level a `CASTLE_WOOD` block plus a `DECK_WOOD` slab drawn from the unit cube (6 draws, +72 triangles). Width is read from the hull table. Rendered side profile within 0.85 px of the models; with the draws off, byte-identical to Phase 49 | [PHASE_50_EXPLANATION.md](PHASE_50_EXPLANATION.md) |
+
+| 51 | `src/Planks.h` and the second extra generator `makeDeckPlanks`: a 1 x 1 unit sheet of 19 strips (9 planks, 10 seams; light and dark vertex colours, symmetric, odd count), laid 2% of the slab's thickness above every deck slab (4 draws, +152 triangles, +304 vertices; `DECK_PLANK`). Planks and seams verified against pixels (within 1 of 255) and counted in a picture (9); no slab shows through in five views, and a lift-0 build shows thousands | [PHASE_51_EXPLANATION.md](PHASE_51_EXPLANATION.md) |
+
+| 52 | Railings: `RailDimensions` and `RailRun`s read from the deck-level table (waist on the hull's cap, quarterdeck, poop, forecastle on their slabs); posts at equal spacing (the nearest whole number of gaps to `spacing`), end posts half a post inside the run, square rails joining the post tops, both sides mirrored; 40 posts + 32 rails of the unit cube (72 draws, `RAIL_WOOD`). Picture compared with the projected models at every pixel in five views: 0 errors outside a 2 px edge band | [PHASE_52_EXPLANATION.md](PHASE_52_EXPLANATION.md) |
 
 Current source: `src/main.cpp`, `src/Mesh.h`, `src/Shader.h`, `src/Camera.h`,
-`shaders/basic.vert`, `shaders/basic.frag`, `src/Material.h`, `src/Lighting.h`. **Stages B and C are
-complete.** The scene is lit by two lights under six materials with Flat, Gouraud and
-Phong selectable in one program; there are no ships or gameplay yet - Stage D begins at
-Phase 34. The frame is 14 draws, 1840 triangles, 1045 vertices. All five meshes
-exist - cube, quad, grid, cylinder and sphere - and all five are generated; only
-the test triangle is still hand-written. The scene draws two triangles, a flat
-grid lying horizontally below everything as a floor, **three** spinning cubes of
-three different sizes (all from a single 1 x 1 x 1 mesh and a single VAO), a
-left-hand column of a closed cylinder, a quad and a ball, and a second cube built
-from shared corners, viewed through a mouse-driven orbit camera with real limits,
-with `GL_DEPTH_TEST` and `GL_CULL_FACE` still switchable live to see what each one
-was doing. Every one of those objects is a `Mesh`, every normal can be checked by
-eye with `N`, object size lives in the model matrix rather than in the vertex
-data, and how finely a mesh is divided is a separate value from how big it is.
+`src/Material.h`, `src/Lighting.h`, `src/Ship.h`, `shaders/basic.vert`, `shaders/basic.frag`.
+**Stages B and C are complete, and Stage D is partly done (Phases 34 to 37).** The scene is
+lit by two lights under eight materials with Flat, Gouraud and Phong selectable in one program,
+and a small prototype ship stands at the back of the sea: a box hull and deck, two rigged masts,
+a flag and a cannon, all built from the five existing meshes as one hierarchy under one root.
+It starts rolled 45 degrees on purpose - the Phase 37 proof - and `H` levels it. That prototype
+proved the method; **Phases 38 to 78 build the real pirate galleon with it.** There is no
+movement, no waves and no firing yet; Stage E now begins at Phase 79. The frame is 28 draws,
+2208 triangles, 1471 vertices. The test gallery from earlier phases is still in the scene.
 
-Both ways of deciding a normal are now in place: ANALYTIC - written down from
-knowing the shape - for all five generators, and AVERAGED by
-`computeSmoothNormals()` for a mesh whose vertices are shared. The window title
-reports what each frame actually cost (`10` draws, `640` triangles, `437`
-vertices at the starting detail), and `+` and `-` rebuild the three parameterised
-meshes live across six detail levels spanning 92 to 36,116 triangles - with the
-draw count fixed at 10 throughout, because detail changes how finely the same
-objects are divided and never how many objects there are.
+All five meshes exist - cube, quad, grid, cylinder and sphere - and all five are
+generated; only the test triangle is still hand-written. Every object in the scene is a
+`Mesh`, every normal can be checked by eye with `N`, object size lives in the model matrix
+rather than in the vertex data, and how finely a mesh is divided is a separate value from
+how big it is. Both ways of deciding a normal are in place: ANALYTIC for all five
+generators, and AVERAGED by `computeSmoothNormals()` for a mesh whose vertices are shared.
+
+The window title reports what each frame actually cost, and `+` and `-` rebuild the three
+parameterised meshes live across six detail levels. The draw count is the same at every
+level, because detail changes how finely the same objects are divided and never how many
+objects there are.
 
 ## Stage reviews
 
@@ -99,25 +146,30 @@ phase audit, findings list and viva pack.
 
 ## How far to work right now
 
-**Stage C, from Phase 26** - lighting. Stage A (Phases 3 to 13) and all of Stage B
-(Phases 14 to 25) are done: all five meshes exist, both ways of deciding a normal
-are in place, the frame's cost is measured live in the title bar, and the
-parameterised meshes rebuild on `+` and `-`. "I want to work until I am creating
-3D objects" has been reached and passed.
+**Stage D continues, from Phase 38** - the pirate galleon. Stages A (Phases 3 to 13), B
+(14 to 25) and C (26 to 33) are done, and so is the first part of Stage D (34 to 37): the ship
+exists as one hierarchy that a single key proves. What remains of Stage D is turning the
+prototype into the ship the brief describes, and the next phase is **Phase 38, the showcase
+scene**. Stage E (player control) now begins at Phase 79, and the later stages moved up with it.
 
-Three landmarks now behind you:
+Landmarks now behind you:
 
 | At | You have |
 |---|---|
 | Phase 10 | Your first real 3D object - a solid, spinning, indexed cube |
 | Phase 13 | A camera that can inspect that object from any angle |
 | Phase 25 | The complete reusable mesh library the whole project is built from |
+| Phase 33 | The full illumination model, and the two L9 demonstrations measured |
+| Phase 37 | A ship that is one tree under one root, proven by the `H` key |
 
-After Phase 25 the project stops inventing geometry. The ship, the cannon, the
-cannonball, the sea, the crew, the rain, and the snow are all the five meshes
-from Stage B, scaled and placed by matrices. Only two more shapes are ever
-added, both cosmetic and both optional: a cone and a splash ring. That is why
-Stage B is worth doing slowly and properly.
+After Phase 25 the project stopped inventing geometry, and the cannon, cannonball, sea,
+crew, rain and snow are still the five meshes from Stage B, scaled and placed by matrices.
+Stage D is the one exception, and it is a deliberate one: a pirate hull cannot be a scaled
+cube, so Phases 47 (`makeHull`), 51 (a plank strip) and 60 (`makeSail`) add three named
+generators. They follow the Stage B rules - unit size, one concept per phase, normals checked
+by eye - and the cone and splash ring remain the only other shapes ever to be added, both
+optional. Stage B is still worth doing slowly and properly: the new generators are built on
+what it taught.
 
 ## Why the later stages are still stage-sized
 
@@ -209,13 +261,13 @@ remainder, so `-` `-` `+` `+` would leave the sphere at 12 x 12 instead of 12 x 
 - undoing the reason Phase 22 made those two numbers different. The six reachable
 levels span 92 to 36,116 triangles while the **draw count stays at 10** at every
 one of them, which is the clearest demonstration in Stage B that triangle count
-and draw count are independent costs. Phase 62 makes that argument with numbers.
+and draw count are independent costs. Phase 103 makes that argument with numbers.
 
 **Note on Phase 24's counters.** They are accumulated inside `drawMesh()`, not
 computed from the config namespaces, which is what makes them a measurement
 rather than a second prediction to keep in sync. That distinction matters twice:
 the `W` key's grid line (Phase 19) predicts from `GridConfig` and the title
-measures, so disagreement between them is a bug found; and Phase 62's
+measures, so disagreement between them is a bug found; and Phase 103's
 optimization argument needs numbers that came from the program rather than from
 arithmetic. The title reports vertices **submitted** per frame, which is larger
 than the vertices resident on the GPU by exactly the amount mesh reuse saves.
@@ -243,136 +295,308 @@ demonstration working, the change is wrong.
 
 ---
 
-## Stage D - The ship hierarchy (Phases 34-37)
+## Stage D - The pirate ship (Phases 34-78)
 
-Replaces the old "one simple hierarchical ship" phase. Still no animation.
+Phases 34-37 built the **method**: a ship as one tree of stored frames, with scale applied
+only at draw time, a muzzle readable as a position and a direction, and one key that proves
+the hierarchy. They used a small box-hulled prototype, on purpose, so the method could be
+tested exactly.
+
+Phases 38-78 build the **ship**: a visually rich pirate galleon in the style of the *Jackdaw*
+(Assassin's Creed IV: Black Flag) and the ships of *Pirates of the Caribbean* - dark hull,
+three masts, black torn sails, rigging, gunports and cannons, a raised ornate stern, a
+bowsprit and figurehead, a skull-and-crossbones flag, and the deck clutter that makes it look
+lived in. Every phase keeps the Phase 34-37 rules: frames are rigid, size is applied at draw
+time, and nothing may break an earlier checkpoint.
+
+### The brief, checked against the project's rules
+
+The brief for this stage was checked before any phase was written. Most of it fits the project
+as it stands. These are the points where it did not, and what was decided.
+
+| The brief says | The project rule it meets | Decision |
+|---|---|---|
+| OpenGL only; C or C++ only | OpenGL 3.3 Core, C++17, with GLFW (window and input), GLAD (function loader) and GLM (maths header) | **Met.** Audited: no Python, no model or texture files, no legacy fixed-function calls. GLUT/GLU were only "preferred" and are not used: they are fixed-function era and GLFW does the same job |
+| Procedural geometry, no external models | The same | **Met.** Every part is generated in code |
+| A curved hull with a pointed bow, "not a rectangular box" | "Five meshes, a sixth will never be added" (Stage B) | **The rule is superseded here.** A scaled cube cannot be a hull. New generators are allowed, named, and each gets its own phase: `makeHull` (47), `makeSail` (60) and a plank strip (51). Everything else stays on the five existing meshes |
+| Shadows "if feasible" | Local illumination only; the viva answer is that the pipeline cannot do shadows (L8 s10-11) | **Not done.** It would contradict a deliberate, defensible position. Phase 43 gets depth from warm key and cool fill light instead |
+| Lanterns "with warm light" | Exactly two lights, never more | **Lanterns are emissive geometry, not light sources** (Phase 44 adds the emission term). The two lights stay |
+| A sunset sky | "No skybox" | **A gradient dome from the existing sphere** (Phase 45). No cube map, no texture, so it is not a skybox |
+| Wood "textures" built from geometry and colour variation | "No textures" | **Met by design.** Plank bands come from per-vertex colour (Phases 48-51) |
+| Anti-aliasing "where available" | No post-processing | **4x MSAA** (Phase 42), which is a window setting and not a post-process |
+| Keyboard camera rotation, zoom, reset, five viewpoints | `W`/`A`/`S`/`D` and the arrow keys are reserved for the ship and the cannon (Stages E and G) | **Camera keys avoid them:** `F1`-`F5` presets, `R` reset, `,` and `.` yaw, `PageUp`/`PageDown` pitch, `Q`/`E` zoom |
+| The ship must be the centrepiece | The scene is still a test gallery | **`G` hides the gallery** (Phase 38). Demo A and Demo B stay reachable with it on |
+| Hundreds of small parts (ropes, planks, barrels) | The old 20-draw budget | **That ceiling is long gone.** Phase 76 batches the static parts, and Phase 103 records the measured budget instead of guessing one |
+| Cinematic, semi-realistic look | "Demonstration beats polish" (the grade comes from taught concepts) | **The student asked for visual fidelity, so it is in scope.** What does not change: the two Stage C demonstrations, the hierarchy rules, and the `H` proof |
+
+Two of these are worth saying plainly. The five-meshes rule was a good rule for Stage B and is
+being broken on purpose here, in three named places, because the brief cannot be met without it.
+And "no shadows" is kept deliberately: it is the one place the brief says "if feasible" and the
+honest answer, for this project, is "not without giving up an argument the report makes".
+
+### What "looks like the movie or game" means here
+
+A film or game model cannot be measured from inside this repository, and a promise that the ship
+"looks like" one would be a promise nobody can check. So the phases define two things that
+can be checked, and one that cannot:
+
+1. **A proportion table**, measured on the finished geometry.
+2. **A feature checklist** of what makes a galleon of this type recognisable, each ticked by a
+   test or a screenshot.
+3. **A review by the student** (Phase 78) of screenshots from all five camera presets against
+   reference images of the ship being imitated. That step is a human judgement, and the
+   phase says so.
+
+| Feature | Target | Verified by |
+|---|---|---|
+| Masts | Three; main tallest, then fore, then mizzen, roughly 1.00 : 0.85 : 0.65. The three-mast layout follows the **Black Pearl**; the Jackdaw is a two-masted brig ([review](SHIP_REFERENCE_REVIEW.md)) | Measured heights |
+| Main mast height | 0.95 to 1.15 times the hull length | Measured |
+| Hull length to beam | Between 3.6 and 4.4 to 1 | Measured on the lofted hull |
+| Stern | A raised sterncastle at least 1.4 times the waist's height above the keel; forecastle lower than the sterncastle | Measured side profile |
+| Gunports | At least six per side in a row, evenly spaced. **Built: eight per side** (the Pearl carries 32 guns; 16 a side if split evenly) | Counted |
+| Sails | Charcoal-black or dark brown, billowing forward, with torn edges | Measured belly, counted torn cells |
+| Flag | Black, at the main masthead, with a white skull and crossbones | Pixel test and screenshot |
+| Bowsprit | Rising 10 to 20 degrees from the bow, with a figurehead beneath it | Measured |
+| Ornament | Bronze and muted-gold trim on the stern, gunwale and figurehead | Palette audit |
+| Palette | Dark mahogany, weathered brown, charcoal black, aged beige, bronze, muted gold | Palette audit |
+
+These numbers are **design targets chosen for the silhouette** of ships of this type. They are not
+measurements of any film or game model.
+
+### Stage D rules for every phase below
+
+- **Every earlier checkpoint still passes.** With the new ship hidden and the gallery on, a render
+  must stay **byte-for-byte identical** to the real Phase 33. MSAA and the golden-hour lighting
+  are therefore switched by profile, and the regression runs in the old profile.
+- **A frame stores translation and rotation only.** New generators build unit-size shapes; the
+  size is applied in the model matrix. Dimensions are data, so a different ship can be built and
+  compared in the same run.
+- **No new light, no new texture, no shadow.**
+- **A decoration is a child of the part it decorates.** A railing post belongs to the deck it
+  stands on, a rope to the mast it hangs from. Nothing is placed in world space.
+- **Static parts that never move relative to each other may be merged** (Phase 76), but only if the
+  picture does not change by a single pixel.
+- Ropes, planks, barrels and the like are placed from **tables and formulas**, never by eye, so a
+  test can check spacing, symmetry and attachment exactly.
+
+### D1 - The hierarchy method (done)
 
 | Phase | Adds | Checkpoint | Viva change | Ref |
 |---:|---|---|---|---|
-| 34 * | `src/Ship.h`: the root and the hull and deck **frames**. The rule that a frame stores translation and rotation only, and `glm::scale` appears only inside `drawMesh` | A hull and a deck at the right size, with the deck not inheriting the hull's stretch | Change the hull dimensions and show the deck is unaffected | B7 |
-| 35 | The rigging chain: mast, yard, sail, and flag, each a child of the one above | A recognisable ship silhouette | Move the mast and watch the sail and flag follow | B7 |
-| 36 | The cannon chain: mount to yoke (azimuth) to barrel (elevation), with a named `MUZZLE_Z` tip | A cannon on the deck; editing `azimuth`/`elevation` by hand swings it correctly | Change the mount position on the deck | B7 |
-| 37 * | Proof: rotating the ship root 45 degrees carries every child, and the `H` key clears the **root's** rotation only | With `H`, children keep their own local transforms while the root is identity | Change the root rotation angle | B7 |
+| 34 * **done** | `src/Ship.h`: the root and the hull and deck **frames**. The rule that a frame stores translation and rotation only, and `glm::scale` appears only inside `drawMesh` | A hull and a deck at the right size, with the deck not inheriting the hull's stretch | Change the hull dimensions and show the deck is unaffected | B7 |
+| 35 **done** | The rigging chain: mast, yard, sail, and flag, each a child of the one above | A recognisable ship silhouette | Move the mast and watch the sail and flag follow | B7 |
+| 36 **done** | The cannon chain: mount to yoke (azimuth) to barrel (elevation), with a named `MUZZLE_Z` tip | A cannon on the deck; editing `azimuth`/`elevation` by hand swings it correctly | Change the mount position on the deck | B7 |
+| 37 * **done** | Proof: rotating the ship root 45 degrees carries every child, and the `H` key clears the **root's** rotation only | With `H`, children keep their own local transforms while the root is identity | Change the root rotation angle | B7 |
+
+### D2 - Showcase, camera and atmosphere (Phases 38-46)
+
+The ship is small, in a crowded gallery, with a camera that only orbits the origin. Before any detail is
+added it needs a stage to stand on.
+
+| Phase | Adds | Checkpoint | Viva change | Ref |
+|---:|---|---|---|---|
+| 38 * **done** | **Showcase scene.** `scaleShipDimensions(d, k)` multiplies every length in a `ShipDimensions` (data, never a matrix, so frames stay rigid) and the ship is shown at galleon scale on a larger sea. `G` hides or restores the test gallery, hidden by default | With `G` on and the ship hidden, ten renders are byte-identical to Phase 33; with `G` off the ship fills the view; every frame stays rigid at several scales | Change `k` and show the ship grows without distorting | Brief s5, s9 |
+| 39 **done** | **Camera presets.** `F1` three-quarter front (the default), `F2` front, `F3` side, `F4` rear, `F5` elevated, `R` reset. Each is a named `(yaw, pitch, radius, target)`; radius and target are stored in hull lengths, so they follow `scaleShipDimensions` | In every preset the whole ship is inside the window with a margin, and its silhouette fills at least 40% of the window's width **or** height, whichever it fills more. (Written as "40% of its width" at first; seen end-on, a tall narrow ship cannot fill 40% of a 16:9 window's width without leaving the top of the window, so the rule measures the dimension the view actually fills) | Change one preset's yaw | Brief s6 |
+| 40 **done** | **Smooth camera.** A preset change eases over a fixed time using `dt`; a mouse drag cancels it | No frame-to-frame jump in yaw, pitch or radius above a set limit, and it arrives exactly on the preset | Change the easing time | Brief s6 |
+| 41 **done** | **Keyboard camera.** `,` and `.` yaw, `PageUp` and `PageDown` pitch, `Q` and `E` zoom, with the existing limits. The mouse is unchanged | A held key turns the camera at the same rate at 30 and at 144 FPS, and the pitch clamp still holds | Change the keyboard turn speed | Brief s6 |
+| 42 **done** | **Anti-aliasing.** 4x MSAA through a window hint, with a clean fallback if the driver refuses it. The regression harness runs with it off | The count of partly-covered edge pixels rises measurably; Demo A and Demo B are unchanged | Turn MSAA off | Brief s4 |
+| 43 **done** | **Golden-hour lighting profile.** A warm low sun, a cool sky-tinted ambient, and a horizon-matched clear colour, as a `LightProfile` selected by the showcase. The Stage C profile returns with `G` | Sunlit faces measure warm (red above blue) and shaded faces measure cool; with `G` on, the Stage C numbers return exactly | Change the sun's colour | Brief s4, s5 |
+| 44 **done** | **Emission term.** `uKe` is added after the lights, honoured by all three shading modes, and is zero for every existing material | An emissive object is unaffected by `L` and by the `K` mask; with `uKe` zero all earlier renders are byte-identical | Make a material glow | Brief s3D |
+| 45 **done** | **Sky dome.** The existing sphere, seen from inside, with an emissive gradient from a golden horizon to a deep zenith, and a sun disc along the sun direction. Not a skybox: no cube map, no texture. **Also adds the distance haze** (`uHazeColor`, `uHazeDensity`, zero in the Stage C profile) that the checkpoint below and Phase 46 both presuppose - no earlier phase provided one | The horizon colour is continuous with the sea's haze; the sun disc lies exactly along the negated sun direction; with haze density zero every earlier render is byte-identical | Change the zenith colour | Brief s5 |
+| 46 (o) **done** | **Distant islands and rocks.** Scaled spheres and cylinders far out as dark, hazed silhouettes | A faint coastline at the horizon in `F1`, at a fixed small draw cost, never crossing the ship | Move one island | Brief s5 |
+
+### D3 - The hull (Phases 47-49)
+
+| Phase | Adds | Checkpoint | Viva change | Ref |
+|---:|---|---|---|---|
+| 47 * **done** | **`makeHull`**: a lofted hull from a table of cross-section stations, stern to bow. Each station is a half-section curve from keel to gunwale, mirrored to both sides; the stations narrow to a pointed stem and taper at the stern, giving a curved lower hull. Unit-mesh rule, normals by the L9 s20 averaging along the loft. It replaces the prototype's cube hull, and the deck, masts and cannon are re-based on it through `hullHalfBeamAt(z)` | The hull's outline from above, the side and the front matches the station table within a set tolerance; length to beam is inside the target range; no degenerate triangles; every earlier Stage D test passes on the new hull | Sharpen the bow or widen the beam by editing the station table | Brief s3A |
+| 48 **done** | **Vertex-colour albedo.** The per-vertex colour, unread since Phase 29, returns as a multiplier on `kd` and `ka` behind `uVertexAlbedo`, off for every earlier object | With the flag off every earlier render is byte-identical; a striped test mesh shows its stripes under Flat, Gouraud and Phong | Change a stripe colour | Brief s3A, s9 |
+| 49 **done** | **Hull planking.** Alternating brown shades per plank strip and dark timber belts (wales) at the waterline, gunwale and deck line, all from vertex colour on the loft rows | The expected number of plank bands is counted along the side; adjacent bands alternate in luminance; the belts are darker than the planks | Change the number of strakes | Brief s3A |
+
+### D4 - Decks, guns and ornament (Phases 50-58)
+
+| Phase | Adds | Checkpoint | Viva change | Ref |
+|---:|---|---|---|---|
+| 50 **done** | **Deck levels.** The main deck, a raised sterncastle (quarterdeck and poop) and a forecastle, as frames at named heights over the hull's station table | In the `F3` side view the stepped profile - high stern, low waist, small forecastle - matches the profile table; every frame is rigid | Raise the sterncastle | Brief s3A |
+| 51 **done** | **Deck planks.** A plank-strip mesh: a grid with alternating vertex colours and dark seams, one plank per strip | The plank count across the beam equals the configured number; seams are darker than planks | Change the plank width | Brief s3A, s3D |
+| 52 **done** | **Railings and supports.** Posts and rails placed along the hull's gunwale curve from the station table | Post spacing is equal, every post stands on the deck level beneath it, and none lies outside the hull | Change the post spacing | Brief s3D |
+| 53 **done** | **Gunports.** Dark recessed frames in a row along both flanks, at stations taken from a table | Count and spacing are as configured; none overlaps another or a belt | Add a gunport | Brief s3A |
+| 54 * **done** | **Broadside cannon array.** A carriage (a block and four wheels) and a barrel behind every gunport, both sides, each one the Phase 36 chain with its own pose. The player's aimed cannon stays the Phase 36 one, moved to the main deck | N cannons per side; every muzzle lies inside its gunport opening; every barrel frame is rigid; the draw count is recorded | Run a cannon out or in | Brief s3A, s3D |
+| 55 **done** | **Stern cabin.** Windows (emissive-tinted glass and frames) and doors across the sterncastle's transom | The window rows are symmetric about the centreline within a set tolerance | Add a window | Brief s3A, s3D |
+| 56 **done** | **Gilded trim.** Bronze and muted-gold materials, and thin mouldings along the stern, the gunwale and the belts | The gold and bronze values come from the palette table; no moulding is coplanar with the surface under it | Change the gold | Brief s3A |
+| 57 **done** | **Bowsprit.** An angled spar from the stem with a lashing detail, a child of the hull | The spar rises between 10 and 20 degrees and attaches at the stem exactly | Change the bowsprit angle | Brief s3A |
+| 58 **done** | **Figurehead.** A stylised figure from reused primitives under the bowsprit | It is centred on the keel line and its bounds sit inside the stated limits | Move the figurehead forward | Brief s3A |
+
+### D5 - Masts, sails and rigging (Phases 59-65)
+
+| Phase | Adds | Checkpoint | Viva change | Ref |
+|---:|---|---|---|---|
+| 59 **done** | **Three masts with stacked yards.** Fore, main and mizzen, each a stack of yards (course, topsail, topgallant), by generalising `MastDimensions` into a list of yards | Heights run main, fore, mizzen; yard widths shrink going up; every frame is rigid; the Phase 35 tests pass on the generalised data | Add a yard to a mast | Brief s3B |
+| 60 * **done** | **`makeSail`**: a subdivided, bowed sail surface (`makeSail(cellsX, cellsY, belly)`), billowing forward, with analytic normals, in a dark weathered sail material, drawn from both sides. It replaces the flat quads | The belly depth matches its formula at sample points; every normal is perpendicular to the surface (the Phase 26 tangent test); a lit and a shaded side are visible | Change the belly | Brief s3B |
+| 61 **done** | **Torn sail edges.** Deterministic jagged edges and a few holes from a fixed table, never random per frame | The torn-cell count equals the table; the sail stays connected apart from the intended holes | Tear one more corner | Brief s3B |
+| 62 **done** | **Stays and backstays.** A `ropeBetween(a, b, radius)` helper (a thin cylinder between two ship-local points, scaled only at draw time), from the mastheads to the bowsprit and the deck | Each rope's ends coincide with its attachment points to 1e-5, and its length equals the distance between them | Move one attachment point | Brief s3B |
+| 63 **done** | **Shrouds.** Paired ropes from each mast's top to chainplates on the gunwale | Symmetric about the centreline, and every lower end is on the rail | Add a pair | Brief s3B |
+| 64 **done** | **Ratlines.** Horizontal ropes between each shroud pair at equal spacing, forming a ladder | Equal spacing, and both ends on the shrouds | Change the spacing | Brief s3B |
+| 65 (o) **done** | **Braces and lifts.** Ropes from the yard ends to the rail and deck | Each end is on its yard and its anchor | Remove one brace | Brief s3B |
+
+### D6 - Pirate flags (Phases 66-68)
+
+| Phase | Adds | Checkpoint | Viva change | Ref |
+|---:|---|---|---|---|
+| 66 **done** | **The pirate flag.** A large black flag at the tallest masthead as a subdivided, slightly curved surface, on the Phase 35 hoist, generalised | Its size matches the table, its curve matches its formula, and it is visible from both sides | Change the flag's size | Brief s3C |
+| 67 **done** | **Smaller flags.** A stern ensign and pennants at the fore and mizzen mastheads, each on its own hoist | The positions and the count are as configured | Move the ensign | Brief s3C |
+| 68 * **done** | **Skull and crossbones from geometry.** A skull (a sphere for the cranium, a block for the jaw, dark sockets) over two crossed bones with rounded ends, a child of the flag, offset to avoid z-fighting | On the black flag a light silhouette covers a fraction of the flag within a stated range, is symmetric about the vertical within a tolerance, and the bones cross at the skull's centre | Make the bones thicker | Brief s3C |
+
+### D7 - Deck equipment (Phases 69-74)
+
+| Phase | Adds | Checkpoint | Viva change | Ref |
+|---:|---|---|---|---|
+| 69 **done** | **Steering wheel.** A ring with spokes and handles on a pedestal, at the stern | Eight spokes at equal 45 degree angles, with a handle on each | Change the spoke count | Brief s3D |
+| 70 **done** | **Barrels and crates.** Clusters from a placement table | Every item is on a deck and none overlaps another beyond a tolerance | Move a stack | Brief s3D |
+| 71 **done** | **Rope coils.** Stacked flattened cylinders by the rails | The radius profile of each coil matches its formula | Add a coil | Brief s3D |
+| 72 **done** | **Lanterns.** Emissive warm glass in a frame, hung at the stern and on the masts. **No new light source**; the two-light rule stands | Lantern pixels stay brighter than their surroundings at every setting of `L`, and the count is as configured | Change a lantern's colour | Brief s3D |
+| 73 **done** | **Ladders, hatches and companionways.** A ladder from the main deck to the quarterdeck, hatch gratings, a cabin door | Rung spacing and slope are as configured; the foot is on the lower deck and the top exactly on the upper | Add a rung | Brief s3D |
+| 74 **done** | **Anchor and chain.** An anchor (shank, arms, stock) on the bow, and a chain of alternating links to the hawse | The link count is as configured, and the chain's ends are on the anchor and the hawse | Add a link | Brief s3D |
+
+### D8 - Finish and proof (Phases 75-78)
+
+| Phase | Adds | Checkpoint | Viva change | Ref |
+|---:|---|---|---|---|
+| 75 **done** | **Palette and material audit.** Dark mahogany, weathered brown, charcoal black, aged beige, bronze and muted gold, plus iron (cannons), hemp (rope) and sailcloth black, all in `Material.h` with a palette table | An audit lists every part of the ship with its material; every one is from the palette and none from a Stage C test colour | Swap one palette entry | Brief s4, s9 |
+| 76 **done** | **Static batching.** The static parts of the ship merge into one mesh per material and frame group at startup, so the root still carries them. The animated parts stay separate | Draw calls are measured before and after, and the picture is **identical to the last byte** | Turn batching off | Brief s8 |
+| 77 **done** | **Re-proof.** The full ship obeys every hierarchy rule: all frames rigid, the `H` proof across every part, the regression byte-identical with the ship hidden and the gallery on, Demo A and Demo B reproduced, and the draw and triangle budget recorded | All of the above, run together | Explain one measurement | B7 |
+| 78 * **done** | **Likeness review.** The proportion table and the feature checklist above are verified by measurement, then screenshots from all five presets are reviewed by the student against reference images of the ship being imitated | Every row of both tables passes, and the student signs off the screenshots | Name one feature and show where it comes from | Brief s9 |
+
+Phase 78 ends with a judgement that only the student can make, and it should be made honestly. If the
+ship does not read as the right ship, the checklist says what to adjust, and the fix is a new phase,
+not an argument.
+
+### What this stage costs
+
+The ship will go from 14 draws to a few hundred, because ropes, planks, barrels and cannons are
+separate parts. That is acceptable on any machine that runs this project, and Phase 76 brings it
+down by batching what never moves. It is recorded at Phase 77 and measured properly at Phase 103,
+rather than guessed here.
 
 ---
 
-## Stage E - Player control (Phases 38-39)
+## Stage E - Player control (Phases 79-80)
 
 Teacher requirement: keyboard ship control.
 
 | Phase | Adds | Checkpoint | Viva change | Ref |
 |---:|---|---|---|---|
-| 38 * | `PlayerMotion { position, heading, speed }`; `W`/`S` change speed, `A`/`D` change heading, both scaled by `dt`. Keyboard camera zoom moves to `Q`/`E` | The ship sails and turns; hull, rigging, and cannon all follow the root | Change `PLAYER_TURN_SPEED` | B16 |
-| 39 (o) | Movement bounds, and a camera target that follows the player root | The ship cannot sail out of the world and stays framed | Change the sea bounds | B16 |
+| 79 * | `PlayerMotion { position, heading, speed }`; `W`/`S` change speed, `A`/`D` change heading, both scaled by `dt`. Camera zoom is already on `Q`/`E` from Phase 41. The debug keys `W` (wireframe) and `D` (depth) collide with the ship controls and are moved off them in this phase (to `F6` and `F7`, since `F1`-`F5` are the camera presets) | The ship sails and turns; hull, rigging, and cannon all follow the root | Change `PLAYER_TURN_SPEED` | B16 |
+| 80 (o) | Movement bounds, and a camera target that follows the player root | The ship cannot sail out of the world and stays framed | Change the sea bounds | B16 |
 
 Storing position and heading is allowed. It is interactive state, not a
 pre-computed animation table.
 
 ---
 
-## Stage F - The living sea (Phases 40-43)
+## Stage F - The living sea (Phases 81-84)
 
 | Phase | Adds | Checkpoint | Viva change | Ref |
 |---:|---|---|---|---|
-| 40 * | `src/Wave.h`: the seven wave literals written **once**, generating both the C++ constants and the GLSL text. GPU displacement in the vertex shader behind `uIsOcean` | The grid becomes moving water | Change one amplitude and see the CPU and GPU still agree | B8.1 |
-| 41 | Analytic wave normals from the partial derivatives | The sun streak glitters and rolls across the water; the Phase 15 debug view shows smooth moving bands, not one flat colour | Change a wave frequency | B8.1 |
-| 42 * | CPU `waveHeight`, `waveSlopeX`, `waveSlopeZ`, and `shipMatrix()` giving heave, roll, and pitch | The ship rides the water it is standing on; `H` now also freezes the rocking | Change the `0.8` rocking factor | B8.2 |
-| 43 | Idle rigging animation: `R_z(A sin(wt + phi))` on the sails and `R_y` on the flag, each with a different phase. `P` pauses time | Sails and flag move independently even with nothing else happening; with `H` on, they keep moving on a still hull | Change one sail's phase offset | B9 |
+| 81 * | `src/Wave.h`: the seven wave literals written **once**, generating both the C++ constants and the GLSL text. GPU displacement in the vertex shader behind `uIsOcean` | The grid becomes moving water | Change one amplitude and see the CPU and GPU still agree | B8.1 |
+| 82 | Analytic wave normals from the partial derivatives | The sun streak glitters and rolls across the water; the Phase 15 debug view shows smooth moving bands, not one flat colour | Change a wave frequency | B8.1 |
+| 83 * | CPU `waveHeight`, `waveSlopeX`, `waveSlopeZ`, and `shipMatrix()` giving heave, roll, and pitch | The ship rides the water it is standing on; `H` now also freezes the rocking | Change the `0.8` rocking factor | B8.2 |
+| 84 | Idle rigging animation: `R_z(A sin(wt + phi))` on the sails and `R_y` on the flag, each with a different phase. `P` pauses time | Sails and flag move independently even with nothing else happening; with `H` on, they keep moving on a still hull | Change one sail's phase offset | B9 |
 
 ---
 
-## Stage G - Aiming the cannon (Phases 44-46)
+## Stage G - Aiming the cannon (Phases 85-87)
 
 | Phase | Adds | Checkpoint | Viva change | Ref |
 |---:|---|---|---|---|
-| 44 | Arrow-key azimuth and elevation, clamped to -5 to 45 degrees | The barrel traverses and elevates; the brass highlight sweeps along it | Change the elevation limits | B11 |
-| 45 * | Reading the muzzle out of the hierarchy: position with `w = 1`, forward direction with `w = 0`, plus a debug line drawn along the barrel axis | The debug line leaves the barrel mouth and points where the gun aims, including while the hull rocks | Change `MUZZLE_Z` | B12.1 |
-| 46 | Auto-track: the target converted into the ship's local space, `wrapAngle()` for the shortest signed angle, a rate-limited slew, and `TAB` to switch modes | The gun tracks a moving point smoothly and never spins the long way round | Change the slew rate | B11 |
+| 85 | Arrow-key azimuth and elevation, clamped to -5 to 45 degrees | The barrel traverses and elevates; the brass highlight sweeps along it | Change the elevation limits | B11 |
+| 86 * | Reading the muzzle out of the hierarchy: position with `w = 1`, forward direction with `w = 0`, plus a debug line drawn along the barrel axis | The debug line leaves the barrel mouth and points where the gun aims, including while the hull rocks | Change `MUZZLE_Z` | B12.1 |
+| 87 | Auto-track: the target converted into the ship's local space, `wrapAngle()` for the shortest signed angle, a rate-limited slew, and `TAB` to switch modes | The gun tracks a moving point smoothly and never spins the long way round | Change the slew rate | B11 |
 
 `wrapAngle` is not optional. Without it the turret swings 357 degrees the wrong
 way every time the bearing crosses the `atan2` branch cut.
 
 ---
 
-## Stage H - Ballistics (Phases 47-49)
+## Stage H - Ballistics (Phases 88-90)
 
 | Phase | Adds | Checkpoint | Viva change | Ref |
 |---:|---|---|---|---|
-| 47 * | `fire()` and the closed form `p(tau) = p0 + v0*tau + 0.5*g*tau^2`, evaluated fresh from the launch time and never accumulated | `SPACE` launches a ball that arcs; firing at the top and at the bottom of a roll gives different arcs | Change gravity | B12.2 |
-| 48 * | Trajectory control: a named `g_muzzleSpeed` on `[` / `]` between clamped limits, and the low-arc lift `theta = 0.5*asin(g*R/v^2)` | A deliberately short flat shot and a deliberately high long shot, on demand | Change the muzzle speed limits | B18 |
-| 49 | Reload state: `SPACE` fires only when ready, `g_reloadReadyAt = now + RELOAD_SECONDS`, plus the 0.15 s muzzle-flash point light | Holding `SPACE` cannot bypass the reload; each shot flashes the barrel | Change `RELOAD_SECONDS` | B18 |
+| 88 * | `fire()` and the closed form `p(tau) = p0 + v0*tau + 0.5*g*tau^2`, evaluated fresh from the launch time and never accumulated | `SPACE` launches a ball that arcs; firing at the top and at the bottom of a roll gives different arcs | Change gravity | B12.2 |
+| 89 * | Trajectory control: a named `g_muzzleSpeed` on `[` / `]` between clamped limits, and the low-arc lift `theta = 0.5*asin(g*R/v^2)` | A deliberately short flat shot and a deliberately high long shot, on demand | Change the muzzle speed limits | B18 |
+| 90 | Reload state: `SPACE` fires only when ready, `g_reloadReadyAt = now + RELOAD_SECONDS`, plus the 0.15 s muzzle-flash point light | Holding `SPACE` cannot bypass the reload; each shot flashes the barrel | Change `RELOAD_SECONDS` | B18 |
 
 ---
 
-## Stage I - The fleet (Phases 50-52)
+## Stage I - The fleet (Phases 91-93)
 
 Teacher requirement: more ships in the sea.
 
 | Phase | Adds | Checkpoint | Viva change | Ref |
 |---:|---|---|---|---|
-| 50 | One extra ship: **the same** `drawShip()` with a different root, a reduced detail level, and a different hull material, on a sine patrol | Two ships, rocking differently because each samples the wave under itself; zero new meshes | Change the patrol radius | B10 |
-| 51 * | A fixed ship array holding per-instance data (position, heading, speed, patrol centre, phase, material, flags); default three non-player ships | Four ships from one ship function, with the count as a named constant | Change the ship count | B17 |
-| 52 | Target selection: a selected-target index and `T` to cycle; aiming and collision read the index instead of a single global | The gun can be pointed at any ship in the fleet | Change the starting target | B17 |
+| 91 | One extra ship: **the same** `drawShip()` with a different root, a reduced detail level, and a different hull material, on a sine patrol | Two ships, rocking differently because each samples the wave under itself; zero new meshes | Change the patrol radius | B10 |
+| 92 * | A fixed ship array holding per-instance data (position, heading, speed, patrol centre, phase, material, flags); default three non-player ships | Four ships from one ship function, with the count as a named constant | Change the ship count | B17 |
+| 93 | Target selection: a selected-target index and `T` to cycle; aiming and collision read the index instead of a single global | The gun can be pointed at any ship in the fleet | Change the starting target | B17 |
 
 ---
 
-## Stage J - Impact and effects (Phases 53-55)
+## Stage J - Impact and effects (Phases 94-96)
 
 | Phase | Adds | Checkpoint | Viva change | Ref |
 |---:|---|---|---|---|
-| 53 * | A hull hit test that **sweeps** the segment travelled this frame, a brief emission flash on the struck ship, and a `HIT` result string | Aiming well reports `HIT` and the struck hull glows; the verdict is the same at 30 and at 144 FPS | Change `HIT_RADIUS` | B13 |
-| 54 (o) | The sea test, run **after** the hull test, reporting `SPLASH` | A short shot reports `SPLASH` where it meets the water | Explain why the hull is tested first | B13 |
-| 55 | Fixed particle pools - smoke, spray, sparks - with position derived from age, and blending enabled for particles only and then switched off again | Firing repeatedly produces smoke and splashes and never allocates in the render loop | Change a particle's life or growth | B14 |
+| 94 * | A hull hit test that **sweeps** the segment travelled this frame, a brief emission flash on the struck ship, and a `HIT` result string | Aiming well reports `HIT` and the struck hull glows; the verdict is the same at 30 and at 144 FPS | Change `HIT_RADIUS` | B13 |
+| 95 (o) | The sea test, run **after** the hull test, reporting `SPLASH` | A short shot reports `SPLASH` where it meets the water | Explain why the hull is tested first | B13 |
+| 96 | Fixed particle pools - smoke, spray, sparks - with position derived from age, and blending enabled for particles only and then switched off again | Firing repeatedly produces smoke and splashes and never allocates in the render loop | Change a particle's life or growth | B14 |
 
 ---
 
-## Stage K - Crew (Phases 56-60)
+## Stage K - Crew (Phases 97-101)
 
 Teacher requirement: visible people with roles, one role per phase.
 
 | Phase | Adds | Checkpoint | Viva change | Ref |
 |---:|---|---|---|---|
-| 56 * | `src/Crew.h`: a body built from reused primitives, and a crew root parented to the deck frame | One crew member stands on the deck and is carried correctly by steering and by the waves | Move the crew member's deck post | B19 |
-| 57 | Lookout: a fixed elevated post plus `R_y(scanAngle)` | The lookout scans from the mast | Change the scan amplitude | B19 |
-| 58 | Helmsman: fixed at the wheel, with body or arm angle following the player's steering input | Turning with `A`/`D` visibly turns the helmsman | Change the arm travel | B19 |
-| 59 | Cannon crew: interpolation between named ready and reload poses, driven by the Phase 49 reload progress | The crew works the gun in time with the reload and is idle when ready | Change a pose | B19 |
-| 60 | Helpers: a small fixed set moving along named deck-local waypoints | Several crew move about the deck without leaving it | Move one waypoint | B19 |
+| 97 * | `src/Crew.h`: a body built from reused primitives, and a crew root parented to the deck frame | One crew member stands on the deck and is carried correctly by steering and by the waves | Move the crew member's deck post | B19 |
+| 98 | Lookout: a fixed elevated post plus `R_y(scanAngle)` | The lookout scans from the mast | Change the scan amplitude | B19 |
+| 99 | Helmsman: fixed at the wheel, with body or arm angle following the player's steering input | Turning with `A`/`D` visibly turns the helmsman | Change the arm travel | B19 |
+| 100 | Cannon crew: interpolation between named ready and reload poses, driven by the Phase 90 reload progress | The crew works the gun in time with the reload and is idle when ready | Change a pose | B19 |
+| 101 | Helpers: a small fixed set moving along named deck-local waypoints | Several crew move about the deck without leaving it | Move one waypoint | B19 |
 
 Waypoints are deck locations, not a frame-by-frame animation table. The crew
 must never need skeletal animation or an imported model.
 
 ---
 
-## Stage L - HUD and optimization (Phases 61-62)
+## Stage L - HUD and optimization (Phases 102-103)
 
 | Phase | Adds | Checkpoint | Viva change | Ref |
 |---:|---|---|---|---|
-| 61 | The full window-title HUD: shading mode, environment, speed, heading, target, aim mode, azimuth, elevation, muzzle speed, reload, flight time, last result, ship and crew counts, draw calls, and FPS | A grader can read every piece of state without opening the code | Add or remove one displayed field | B21 |
-| 62 * | Measurement pass: unique meshes and their reuse, idle and effect draw/triangle counts, uniforms hoisted out of the per-object loop, no allocation in the loop, and measured FPS | The report's optimization section contains real measured numbers, not the old 20-draw ceiling | Explain one measurement | B22 |
+| 102 | The full window-title HUD: shading mode, environment, speed, heading, target, aim mode, azimuth, elevation, muzzle speed, reload, flight time, last result, ship and crew counts, draw calls, and FPS | A grader can read every piece of state without opening the code | Add or remove one displayed field | B21 |
+| 103 * | Measurement pass: unique meshes and their reuse, idle and effect draw/triangle counts, uniforms hoisted out of the per-object loop, no allocation in the loop, and measured FPS | The report's optimization section contains real measured numbers, not the old 20-draw ceiling | Explain one measurement | B22 |
 
 ---
 
-## Stage M - Environment modes (Phases 63-65)
+## Stage M - Environment modes (Phases 104-106)
 
 These stay **last**, exactly as the teacher required, and are never started
 while an earlier checkpoint fails.
 
 | Phase | Adds | Checkpoint | Viva change | Ref |
 |---:|---|---|---|---|
-| 63 * | `enum class EnvironmentMode`, one settings function supplying clear colour, global ambient, and sun direction/colour/intensity; `4` sun and `5` moonlight | Two clearly different times of day; ship, cannon, and crew keep working in both | Change the moonlight colour | B20 |
-| 64 | Rain mode on `6`: a darker palette plus a fixed downward rain pool | Rain falls and the scene is visibly overcast | Change the rain speed or count | B20 |
-| 65 | Winter mode on `7`: a cold palette plus a slow drifting snow pool | Snow drifts and the palette is cold | Change the snow drift | B20 |
+| 104 * | `enum class EnvironmentMode`, one settings function supplying clear colour, global ambient, and sun direction/colour/intensity; `4` sun and `5` moonlight | Two clearly different times of day; ship, cannon, and crew keep working in both | Change the moonlight colour | B20 |
+| 105 | Rain mode on `6`: a darker palette plus a fixed downward rain pool | Rain falls and the scene is visibly overcast | Change the rain speed or count | B20 |
+| 106 | Winter mode on `7`: a cold palette plus a slow drifting snow pool | Snow drifts and the palette is cold | Change the snow drift | B20 |
 
 One shader system receives different mode values. Four shader programs would be
 a scope violation.
 
 ---
 
-## Stage N - Submission (Phase 66)
+## Stage N - Submission (Phase 107)
 
 | Phase | Adds | Checkpoint | Ref |
 |---:|---|---|---|
-| 66 | Report and viva rehearsal: traceability matrix, illumination equation and material table with slide citations, the Flat/Gouraud/Phong and ocean-highlight evidence, the player-root transform explanation, fleet and ship hierarchy diagrams, a crew screenshot naming every role, two trajectories, one screenshot per environment mode, final measurements, and the local-versus-global illumination paragraph | The 3-minute demonstration can be performed twice without touching code | B23 |
+| 107 | Report and viva rehearsal: traceability matrix, illumination equation and material table with slide citations, the Flat/Gouraud/Phong and ocean-highlight evidence, the player-root transform explanation, fleet and ship hierarchy diagrams, a crew screenshot naming every role, two trajectories, one screenshot per environment mode, final measurements, and the local-versus-global illumination paragraph | The 3-minute demonstration can be performed twice without touching code | B23 |
 
 ---
 
@@ -380,12 +604,12 @@ a scope violation.
 
 Merge in this order, and never merge a `*` phase:
 
-1. The `(o)` phases: 8 into 7, 19 into 18, 21 into 20, 24 into 25, 39 into 38,
-   54 into 53.
+1. The `(o)` phases: 8 into 7, 19 into 18, 21 into 20, 24 into 25, 80 into 79,
+   95 into 94.
 2. Stage A phases 4, 5, and 6 into one model-matrix phase.
 3. Stage B phases 20 and 22 into one curved-surface phase.
-4. Stage K helpers (60) into the cannon crew phase (59).
-5. Stage M rain and winter (64, 65) into one weather phase.
+4. Stage K helpers (101) into the cannon crew phase (100).
+5. Stage M rain and winter (105, 106) into one weather phase.
 
 Never cut, because each is an explicit teacher requirement: keyboard ship
 control, multiple ships, manual firing with trajectory adjustment, the four crew

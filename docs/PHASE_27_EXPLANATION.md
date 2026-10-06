@@ -165,7 +165,7 @@ shader.setVec3("uSunColor", LightConfig::SUN_COLOR);
 
 Neither the sun nor the global ambient belongs to any one object, so sending them
 inside the per-object loop would be eleven identical uploads per frame instead of
-one. This is the "hoist uniforms out of the per-object loop" point that Phase 62
+one. This is the "hoist uniforms out of the per-object loop" point that Phase 103
 measures, applied as soon as there is something to hoist.
 
 ## The `N` debug view stays unlit

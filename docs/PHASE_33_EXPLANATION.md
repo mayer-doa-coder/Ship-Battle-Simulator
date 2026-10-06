@@ -259,7 +259,7 @@ comparison and once stretched for Phase 26's.
 Nothing is added, and nothing after this may break either demonstration. **If a later
 change stops Demo A or Demo B working, the change is wrong.**
 
-No FPS comparison between the shading modes - that measurement belongs to Phase 62,
+No FPS comparison between the shading modes - that measurement belongs to Phase 103,
 the optimization pass, along with the argument that one program means no state-change
 cost when the mode switches.
 

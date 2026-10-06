@@ -211,7 +211,7 @@ disagrees with the code. **PARTIAL** = holds only in part.
   because all four uniforms are genuinely used.
 - Observation (not a defect): `glGetUniformLocation` is called on every setter
   call, 10 lookups per frame (2 camera uniforms + `uTint` and `uModel` for each
-  of 4 draws). Irrelevant now; Phase 62's "uniforms
+  of 4 draws). Irrelevant now; Phase 103's "uniforms
   hoisted out of the per-object loop" will want cached locations.
 
 ### 4.5 Phase 4 - the model matrix
@@ -480,10 +480,10 @@ committed together with its neighbour.
 These are not Stage A defects. They are things Stage A leaves for later phases
 to trip over.
 
-1. **Key conflicts in Phase 38.** Stage E gives `W/A/S/D` to the ship. Stage A
+1. **Key conflicts in Phase 79.** Stage E gives `W/A/S/D` to the ship. Stage A
    already uses `W` (wireframe, Phase 11) and `D` (depth test, Phase 8). The
    plan moves camera zoom to `Q/E` but does not say where the wireframe and
-   depth toggles go. Decide before Phase 38; the debug keys are worth keeping.
+   depth toggles go. Decide before Phase 79; the debug keys are worth keeping.
 2. **Phase 19 repeats Phase 11.** Plan row 19 ("Wireframe toggle with
    `glPolygonMode`") is already implemented and working since Phase 11. Phase
    19's real new content is comparing `N = 4` against `N = 32` in wireframe;
@@ -500,7 +500,7 @@ to trip over.
 4. **GPU selection on a hybrid laptop.** Phase 0 recorded an NVIDIA RTX 5050;
    this run was given an Intel UHD 770 and reported 82-109 FPS under V-sync.
    Windows chose the GPU. Before the high-tessellation demonstrations (Stage C,
-   Phase 33) and the Phase 62 measurements, pin the executable to the NVIDIA
+   Phase 33) and the Phase 103 measurements, pin the executable to the NVIDIA
    GPU in Windows Graphics settings, otherwise FPS comparisons between Flat,
    Gouraud, and Phong will measure the wrong chip.
 5. **Mouse sensitivity is per screen coordinate,** not per pixel, so it can
@@ -594,7 +594,7 @@ Do these in order:
    it blocks Phase 14.
 3. Delete the duplicate Stage B row at `README.md:75`.
 4. Commit as its own change, so the fix is separable from Phase 14's work.
-5. Write down now where `W` and `D` go in Phase 38 (F7.1).
+5. Write down now where `W` and `D` go in Phase 79 (F7.1).
 
 Manual checks I could not perform, worth doing yourself once:
 

@@ -186,7 +186,7 @@ Several assignments are previews of the finished project, which is deliberate:
 
 | Object | Material | Why |
 |---|---|---|
-| the grid floor | `OCEAN` | it becomes the sea in Phase 40 |
+| the grid floor | `OCEAN` | it becomes the sea in Phase 81 |
 | the ball in the left column | `BLACK_PLASTIC` | it becomes the cannonball |
 | the tube | `BRASS` | it becomes the cannon barrel |
 | the three cubes | `HULL_WOOD` | they become the hull in Stage D |

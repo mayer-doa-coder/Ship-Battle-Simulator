@@ -113,7 +113,7 @@ The plan is emphatic about this, and there are three separate reasons:
    `shader.setInt("uShadingMode", mode)`. With three programs it is a
    `glUseProgram` every time, which is a pipeline state change - and the project
    would then have to give up the "no state-change cost on mode switch" argument in
-   the optimization section at Phase 62.
+   the optimization section at Phase 103.
 3. **It is a smaller thing to explain.** One uniform, one branch.
 
 The cost is a branch in the shader. Every fragment evaluates `if (uShadingMode == 0)`
@@ -336,7 +336,7 @@ demonstrations are **not** set up yet: Phase 33 is the verification phase that p
 and photographs Demo A (the grid at `n_s` 160, low tessellation) and Demo B (the
 barrel at 6-8 segments).
 
-No FPS comparison between the modes. That measurement belongs to Phase 62, which is
+No FPS comparison between the modes. That measurement belongs to Phase 103, which is
 where the optimization argument is made with numbers.
 
 Phase 32 adds the **`K` term mask** - ambient / +diffuse / +specular / full, L8

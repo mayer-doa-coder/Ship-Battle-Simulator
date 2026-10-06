@@ -140,7 +140,7 @@ have to store all 437, and every extra copy of a cube would cost another 24
 vertices of memory instead of nothing at all.
 
 It is a modest saving today. Stage I puts a fleet of ships in the water from one
-set of meshes, and then it is not modest. Phase 62 measures it properly for the
+set of meshes, and then it is not modest. Phase 103 measures it properly for the
 finished scene.
 
 ## Why the title is only rewritten when a number changes
@@ -177,7 +177,7 @@ window usually is not, and for a graded demonstration that matters. The counters
 are also printed to the console once, so they survive in the log if the title bar
 is cropped out of shot.
 
-Phase 61 grows this same mechanism into the full HUD - shading mode, environment,
+Phase 102 grows this same mechanism into the full HUD - shading mode, environment,
 heading, azimuth, reload, flight time - and this phase is the small first version
 of it.
 
@@ -293,13 +293,13 @@ Phase 24 passes when:
 ## What is not part of Phase 24
 
 Not the full HUD - shading mode, environment, heading, azimuth, elevation, muzzle
-speed, reload, flight time and the rest are Phase 61, and most of what they report
+speed, reload, flight time and the rest are Phase 102, and most of what they report
 does not exist yet. No FPS in the title: the console has reported it since Phase 1
 and duplicating it here would make the title change every frame for no gain.
 
 No runtime tessellation control - the `+` and `-` keys that rebuild meshes live are
 Phase 25, and they are what will make these counters visibly move. No optimization
-work: Phase 62 is the measurement pass that uses numbers like these to argue about
+work: Phase 103 is the measurement pass that uses numbers like these to argue about
 cost. No lighting.
 
 Phase 25 adds `rebuildMeshes()` on `+` and `-`, with clamped limits - the last

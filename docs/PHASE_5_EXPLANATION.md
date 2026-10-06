@@ -304,7 +304,7 @@ Counter-clockwise on the screen, when turning around the Z axis.
 ### Why is `deltaTime` still unused?
 
 The spin is a formula of absolute time, like the slide, so it uses `now`.
-`deltaTime` is for motion that responds to the player, first used in Phase 38.
+`deltaTime` is for motion that responds to the player, first used in Phase 79.
 
 ## Simple viva modifications
 

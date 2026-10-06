@@ -170,7 +170,7 @@ depending on the machine. Nothing is wrong either way.
 
 (This is also a reminder that this laptop has two GPUs and Windows does not
 always hand the program the same one. Before any FPS comparison later in the
-project - Phase 33's shading-mode demonstrations and Phase 62's measurements -
+project - Phase 33's shading-mode demonstrations and Phase 103's measurements -
 pin the executable to one GPU in Windows Graphics settings, or the numbers will
 be measuring different hardware.)
 
@@ -312,7 +312,7 @@ them it is the same for every object in the frame. Only `uTint` and `uModel`
 differ per object, so only those two are set inside the drawing section.
 
 Sorting uniforms into "same for the whole frame" and "different per object" is a
-habit worth forming now: Phase 62's optimization pass is explicitly about
+habit worth forming now: Phase 103's optimization pass is explicitly about
 hoisting the first kind out of the per-object loop, and doing it as each uniform
 is added means there is nothing to clean up later.
 

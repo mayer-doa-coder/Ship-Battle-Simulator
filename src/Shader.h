@@ -20,6 +20,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 class ShaderProgram {
@@ -142,6 +143,26 @@ public:
         glUniform3fv(uniformLocation(name), 1, glm::value_ptr(value));
     }
 
+    // Environment build: two floats, for the effects program (the window size in pixels).
+    void setVec2(const char* name, const glm::vec2& value)
+    {
+        glUniform2fv(uniformLocation(name), 1, glm::value_ptr(value));
+    }
+
+    // Environment build: four floats (the clip plane of the reflection pass).
+    void setVec4(const char* name, const glm::vec4& value)
+    {
+        glUniform4fv(uniformLocation(name), 1, glm::value_ptr(value));
+    }
+
+    // Upload a compact array in one call. The hybrid ocean ray tracer stores
+    // each analytic proxy as xyz centre plus radius in w.
+    void setVec4Array(const char* name, const glm::vec4* values, int count)
+    {
+        if (values != nullptr && count > 0)
+            glUniform4fv(uniformLocation(name), count, glm::value_ptr(values[0]));
+    }
+
     void setMat4(const char* name, const glm::mat4& value)
     {
         // Count 1 matrix, no transpose, then 16 floats.
@@ -173,6 +194,7 @@ public:
 
         // A new program has new uniform locations, so old warnings no longer apply.
         m_missingUniforms.clear();
+        m_locationCache.clear();
     }
 
 private:
@@ -181,6 +203,9 @@ private:
     // Names we have already complained about. Without this the warning below
     // would print on every frame, roughly 120 times per second.
     std::vector<std::string> m_missingUniforms;
+
+    // Uniform locations already asked for, keyed by the address of the (literal) name.
+    std::unordered_map<const char*, GLint> m_locationCache;
 
     // Ask the driver where a uniform lives inside the linked program.
     //
@@ -192,7 +217,14 @@ private:
     // That is why we print the warning once.
     GLint uniformLocation(const char* name)
     {
+        // Environment build: the scene now makes tens of thousands of uniform writes a frame (every part of every crew member has a model
+        // matrix), and asking the driver to look a name up by string each time is the slow part. Every caller passes a string LITERAL, whose
+        // address never changes, so the answer is remembered by address after the first lookup.
+        const auto cached = m_locationCache.find(name);
+        if (cached != m_locationCache.end())
+            return cached->second;
         const GLint location = glGetUniformLocation(m_id, name);
+        m_locationCache.emplace(name, location);
 
         if (location == -1) {
             const bool alreadyWarned =

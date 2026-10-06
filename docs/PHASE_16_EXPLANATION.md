@@ -339,7 +339,7 @@ do not - which is a perfectly good thing to be able to point at and explain.
 
 Two more objects, 24 more triangles per frame, and **not one extra byte on the
 graphics card**. That table is the optimisation argument in miniature, and
-Phase 62 measures the same thing for the finished scene.
+Phase 103 measures the same thing for the finished scene.
 
 ## Where each job happens
 

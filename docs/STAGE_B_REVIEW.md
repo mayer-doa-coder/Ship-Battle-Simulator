@@ -31,8 +31,10 @@ What exists at the end of Stage B:
 
 - **one** `Vertex` layout and **one** `Mesh` type that owns its own graphics-card
   memory and frees it properly;
-- **five** shape generators - cube, quad, grid, cylinder, sphere - and no sixth
-  will ever be added;
+- **five** shape generators - cube, quad, grid, cylinder, sphere. (When this review
+  was written the plan said no sixth would ever be added. **Stage D supersedes that**:
+  the pirate hull and sails need three more generators, named in the plan at Phases 47,
+  51 and 60.);
 - **both** ways of deciding which way a surface faces: written down from knowing
   the shape, and averaged from the triangles;
 - a rule that a shape is built 1 unit across and resized when it is drawn;
@@ -384,7 +386,7 @@ from it while the scene keeps turning.
 Fifty-six times the geometry, the same ten draws, because detail changes how finely
 the same objects are divided and never how many objects there are. Those two costs
 are independent and are improved by completely different means, which is the whole
-argument Phase 62 will make.
+argument Phase 103 will make.
 
 The line that makes this phase safe was written in **Phase 14**:
 

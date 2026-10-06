@@ -188,7 +188,7 @@ Fifty-six times the geometry, the same ten draws. Detail changes how finely the
 same objects are divided; it never changes how many objects there are.
 
 That distinction is the reason the two numbers are both in the window title, and
-it is the whole argument Phase 62 will make about optimization: a frame's cost has
+it is the whole argument Phase 103 will make about optimization: a frame's cost has
 two independent parts, and they are improved by completely different means. More
 triangles cost vertex processing and rasterisation. More draws cost the
 *conversation* between the CPU and the graphics card - state changes, uniform
@@ -404,7 +404,7 @@ No new shapes - Stage B is finished and the five meshes are final. No lighting:
 Phase 26 begins Stage C with the normal matrix, and everything about how these
 surfaces are *shaded* belongs there. No level-of-detail switching by distance; the
 detail here is a demonstration control, not an optimization. No measurement of
-rebuild cost - Phase 62 is the phase that argues about performance with numbers.
+rebuild cost - Phase 103 is the phase that argues about performance with numbers.
 
 Stage B is done. **Phase 26 starts Stage C**, with
 `uNormalMatrix = (M⁻¹)ᵀ` computed on the CPU once per object per frame - the fix

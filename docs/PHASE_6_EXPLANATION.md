@@ -141,7 +141,7 @@ toggle only fires on the frame the key transitions from up to down: the leading
 edge of the press. This was measured directly: holding `O` for about a second
 produced exactly one console line, not dozens.
 
-This same technique returns for `TAB` (Phase 46) and every other mode-switch key
+This same technique returns for `TAB` (Phase 87) and every other mode-switch key
 in the project.
 
 ## Keeping the factor inside a range without a clamp

@@ -19,9 +19,15 @@
 
 #include <glm/glm.hpp>
 
+#include "Hull.h"
+#include "Planks.h"
+
 #include <cmath>
+#include <algorithm>
 #include <cstddef>
 #include <cstdio>
+#include <map>
+#include <utility>
 #include <vector>
 
 // One vertex, used by every mesh in the project from here on.
@@ -451,7 +457,7 @@ inline bool makeQuad(Mesh& mesh, const glm::vec3 cornerColors[4])
 //
 // It lies in the XZ plane with the normal (0, 1, 0): FLAT AND HORIZONTAL, like
 // a floor, not upright like the quad. That is deliberate and the two are not
-// interchangeable. This mesh becomes the sea in Phase 40, where the wave
+// interchangeable. This mesh becomes the sea in Phase 81, where the wave
 // displaces y from functions of x and z, so its two parameters have to be x
 // and z. Building it upright now would mean rebuilding it then.
 //
@@ -478,7 +484,7 @@ inline void buildGridGeometry(int cells,
         cells = 1;
 
     // Every vertex of a flat horizontal surface faces the same way: straight
-    // up. (Phase 41 is where the wave's slope makes this vary per vertex.)
+    // up. (Phase 82 is where the wave's slope makes this vary per vertex.)
     const glm::vec3 normal(0.0f, 1.0f, 0.0f);
 
     const int side = cells + 1;          // vertices along one edge: the fence posts
@@ -1070,4 +1076,291 @@ inline bool makeSmoothCube(Mesh& mesh,
     buildSharedCubeGeometry(bottomColor, topColor, vertices, indices);
     computeSmoothNormals(vertices, indices);
     return mesh.upload("smoothcube", vertices, indices);
+}
+
+// ---- Phase 47: the hull - the first of the three generators beyond the original five ---------
+//
+// The plan allows exactly three shapes that a scaled primitive cannot make: this hull, the plank
+// strip (Phase 51) and the sail (Phase 60). A cube scaled to a hull's size is a barge; a hull is a
+// SHAPE, and a shape needs its own generator.
+//
+// Built the way it is described in src/Hull.h: a ring of points for each cross-section from stern
+// to stem, and a quad between every pair of neighbouring points on neighbouring rings.
+//
+// THE FOUR SURFACES. Like the cylinder, whose wall and caps cannot share vertices because they need
+// different normals, the hull is four surfaces that meet at CREASES:
+//
+//     the sides     one smooth surface from the left gunwale, under the keel, to the right gunwale
+//     the cap       the flat-across top between the two gunwales, normal up - the deck level
+//     the transom   the flat stern, normal aft
+//     (the stem     is not a surface: at the bow the width reaches zero and the two sides meet)
+//
+// A vertex carries ONE normal. The sides and the cap meet at the gunwale at roughly a right angle;
+// sharing the gunwale's vertices would average the two normals and round the edge off, so the cap and
+// the transom get their OWN copies of the vertices along the edges they share with the sides. The
+// positions are identical; the meaning is different (the Phase 10 cube lesson, again).
+//
+//     unit mesh      x, y, z all in [-0.5, 0.5]; the draw-time scale is (beam, depth, length)
+//     normals        computeSmoothNormals() - the L9 slide 20 averaging formula - run over each surface
+//     winding        counter-clockwise seen from OUTSIDE, as every mesh in the project
+inline void buildHullGeometry(const std::vector<HullRing>& rings,
+                              const HullColors& colors,
+                              std::vector<Vertex>& outVertices,
+                              std::vector<unsigned int>& outIndices)
+{
+    // Phase 49: the hull is built in TWO passes. Pass one (everything below, down to the normals) builds the
+    // surface with every ring-point shared between the quads around it, so that computeSmoothNormals() blends
+    // across the planks and the hull shades as one smooth curve. Pass two (at the end) copies it out and gives each
+    // PLANK its own vertices, so that each can carry its own colour with a crisp edge, and takes the normals
+    // from pass one so the edge is invisible to the lighting. These two are the temporary mesh of pass one:
+    std::vector<Vertex> vertices;
+    std::vector<unsigned int> indices;
+
+    const int R = static_cast<int>(rings.size());
+    const int S = HullShape::STRAKES;
+    const int perRing = 2 * S + 1;    // left gunwale ... keel ... right gunwale
+
+    const auto at = [](const HullRing& r, int k, float side) {
+        const glm::vec2 p = hullSectionPoint(r, k);
+        return glm::vec3(side * p.x, p.y, r.z);
+    };
+    const auto push = [&](const glm::vec3& p) {
+        vertices.push_back({ p, glm::vec3(0.0f), glm::vec3(1.0f) });
+        return static_cast<unsigned int>(vertices.size() - 1u);
+    };
+    // A triangle is only kept if it has an area: at the stem the left and right gunwale points of the
+    // last ring are the same place, and the quad that ends there collapses to a triangle.
+    const auto addTriangle = [&](unsigned int a, unsigned int b, unsigned int c) {
+        const glm::vec3 e1 = vertices[b].position - vertices[a].position;
+        const glm::vec3 e2 = vertices[c].position - vertices[a].position;
+        if (glm::length(glm::cross(e1, e2)) < 1e-9f)
+            return;
+        indices.push_back(a);
+        indices.push_back(b);
+        indices.push_back(c);
+    };
+
+    // ---- 1. the sides: rings of 2S+1 points, left gunwale (j = 0) to keel (j = S) to right gunwale ----
+    for (int i = 0; i < R; ++i) {
+        for (int j = 0; j < perRing; ++j) {
+            if (j < S)        push(at(rings[static_cast<std::size_t>(i)], S - j, -1.0f));
+            else if (j == S)  push(at(rings[static_cast<std::size_t>(i)], 0, 1.0f));
+            else              push(at(rings[static_cast<std::size_t>(i)], j - S, 1.0f));
+        }
+    }
+    const auto side = [perRing](int i, int j) { return static_cast<unsigned int>(i * perRing + j); };
+
+    // The same index pattern is counter-clockwise from outside on BOTH flanks (worked out in the
+    // plan for this phase: on the right, j rises with the gunwale; on the left it falls, and that
+    // reverses the viewer's handedness exactly as much as it reverses the direction).
+    for (int i = 0; i + 1 < R; ++i)
+        for (int j = 0; j + 1 < perRing; ++j) {
+            addTriangle(side(i, j), side(i, j + 1), side(i + 1, j + 1));
+            addTriangle(side(i, j), side(i + 1, j + 1), side(i + 1, j));
+        }
+
+    // ---- 2. the cap: left and right gunwale points, their own vertices, normal up ----
+    std::vector<unsigned int> capL(static_cast<std::size_t>(R)), capR(static_cast<std::size_t>(R));
+    for (int i = 0; i < R; ++i) {
+        const HullRing& r = rings[static_cast<std::size_t>(i)];
+        capL[static_cast<std::size_t>(i)] = push(at(r, S, -1.0f));
+        // At the stem the two gunwale points coincide; one vertex serves both so none is left unused.
+        capR[static_cast<std::size_t>(i)] = (r.halfWidth < 1e-9f) ? capL[static_cast<std::size_t>(i)] : push(at(r, S, 1.0f));
+    }
+    for (int i = 0; i + 1 < R; ++i) {
+        const std::size_t a = static_cast<std::size_t>(i), b = a + 1;
+        addTriangle(capL[a], capL[b], capR[b]);
+        addTriangle(capL[a], capR[b], capR[a]);
+    }
+
+    // ---- 3. the transom: the flat stern, closed across the first ring ----
+    const std::size_t transomFirst = vertices.size();    // pass two needs to know where the transom's vertices begin
+    {
+        const HullRing& r = rings.front();
+        const unsigned int keel = push(at(r, 0, 1.0f));
+        std::vector<unsigned int> tl(static_cast<std::size_t>(S + 1)), tr(static_cast<std::size_t>(S + 1));
+        tl[0] = tr[0] = keel;
+        for (int k = 1; k <= S; ++k) {
+            tl[static_cast<std::size_t>(k)] = push(at(r, k, -1.0f));
+            tr[static_cast<std::size_t>(k)] = push(at(r, k, 1.0f));
+        }
+        for (int k = 0; k < S; ++k) {
+            const std::size_t a = static_cast<std::size_t>(k), b = a + 1;
+            addTriangle(tl[a], tl[b], tr[b]);
+            addTriangle(tl[a], tr[b], tr[a]);
+        }
+    }
+
+    computeSmoothNormals(vertices, indices);
+
+    // ---- pass two: give every plank its own vertices, and paint it ----
+    //
+    // A vertex carries ONE colour. A row of the loft is shared by the plank below it and the plank above, which
+    // are different colours, so the row's vertices are duplicated - once per plank that uses them. The position and
+    // the NORMAL are copied from pass one, so the lighting sees one smooth surface and only the paint changes.
+    //
+    // The cap and the transom are not planked: they keep their vertices, one colour each.
+    outVertices.clear();
+    outIndices.clear();
+    const std::size_t sideVertexCount = static_cast<std::size_t>(R) * static_cast<std::size_t>(perRing);
+    std::map<std::pair<unsigned int, int>, unsigned int> plankVertex;       // (pass-one vertex, strake) -> output vertex
+    std::map<unsigned int, unsigned int> otherVertex;                        // pass-one vertex (cap, transom) -> output vertex
+
+    const auto paintedSide = [&](unsigned int shared, int strake) {
+        const auto key = std::make_pair(shared, strake);
+        const auto found = plankVertex.find(key);
+        if (found != plankVertex.end())
+            return found->second;
+        const Vertex& src = vertices[shared];
+        outVertices.push_back({ src.position, src.normal, colors.strake[static_cast<std::size_t>(strake)] });
+        const unsigned int made = static_cast<unsigned int>(outVertices.size() - 1u);
+        plankVertex[key] = made;
+        return made;
+    };
+    const auto keptVertex = [&](unsigned int shared) {
+        const auto found = otherVertex.find(shared);
+        if (found != otherVertex.end())
+            return found->second;
+        const Vertex& src = vertices[shared];
+        const bool isTransom = static_cast<std::size_t>(shared) >= transomFirst;
+        outVertices.push_back({ src.position, src.normal, isTransom ? colors.transom : colors.cap });
+        const unsigned int made = static_cast<unsigned int>(outVertices.size() - 1u);
+        otherVertex[shared] = made;
+        return made;
+    };
+    for (std::size_t t = 0; t + 2 < indices.size(); t += 3) {
+        const unsigned int a = indices[t], b = indices[t + 1], c = indices[t + 2];
+        if (a < sideVertexCount) {
+            // A side triangle: its two ring-points j and j + 1 decide the strake.
+            const int ja = static_cast<int>(a % static_cast<unsigned int>(perRing));
+            const int jb = static_cast<int>(b % static_cast<unsigned int>(perRing));
+            const int jc = static_cast<int>(c % static_cast<unsigned int>(perRing));
+            const int strake = hullStrakeOfQuad(std::min(ja, std::min(jb, jc)), S);
+            outIndices.push_back(paintedSide(a, strake));
+            outIndices.push_back(paintedSide(b, strake));
+            outIndices.push_back(paintedSide(c, strake));
+        } else {
+            outIndices.push_back(keptVertex(a));
+            outIndices.push_back(keptVertex(b));
+            outIndices.push_back(keptVertex(c));
+        }
+    }
+}
+
+// Builds the hull from a station table and uploads it.
+inline bool makeHull(Mesh& mesh, const HullProfile& profile, const HullColors& colors)
+{
+    std::vector<Vertex> vertices;
+    std::vector<unsigned int> indices;
+    buildHullGeometry(hullRings(profile), colors, vertices, indices);
+    return mesh.upload("hull", vertices, indices);
+}
+
+// ---- Phase 51: the deck plank sheet -----------------------------------------------------------------------------------
+//
+// The second of the three generators the plan allows beyond the original five meshes (the hull was the first). One flat
+// sheet in the xz plane at y = 0, 1 x 1, normal +y, wound counter-clockwise as seen from above - so it is visible from above
+// and culled from below, like a real deck. It is made of the strips in src/Planks.h: a plank, a seam, a plank, ... each a
+// quad running the full length (z = -0.5 to +0.5) with its own four vertices, so the colour changes at a seam EDGE instead
+// of blending across it (a vertex has one colour; compare Phase 49's second pass).
+//
+//   vertices = 4 x (planks + seams)       triangles = 2 x (planks + seams)
+inline void buildDeckPlankGeometry(int planks,
+                                   float seamFraction,
+                                   std::vector<Vertex>& vertices,
+                                   std::vector<unsigned int>& indices)
+{
+    vertices.clear();
+    indices.clear();
+    const glm::vec3 up(0.0f, 1.0f, 0.0f);
+    for (const DeckStrip& s : deckStrips(planks, seamFraction)) {
+        const unsigned int base = static_cast<unsigned int>(vertices.size());
+        vertices.push_back({ glm::vec3(s.x0, 0.0f, -UNIT_HALF_EXTENT), up, s.color });   // 0: port edge, stern
+        vertices.push_back({ glm::vec3(s.x0, 0.0f,  UNIT_HALF_EXTENT), up, s.color });   // 1: port edge, bow
+        vertices.push_back({ glm::vec3(s.x1, 0.0f,  UNIT_HALF_EXTENT), up, s.color });   // 2: starboard edge, bow
+        vertices.push_back({ glm::vec3(s.x1, 0.0f, -UNIT_HALF_EXTENT), up, s.color });   // 3: starboard edge, stern
+        indices.push_back(base + 0); indices.push_back(base + 1); indices.push_back(base + 2);
+        indices.push_back(base + 0); indices.push_back(base + 2); indices.push_back(base + 3);
+    }
+}
+
+inline bool makeDeckPlanks(Mesh& mesh)
+{
+    std::vector<Vertex> vertices;
+    std::vector<unsigned int> indices;
+    buildDeckPlankGeometry(DeckPlanking::PLANKS, DeckPlanking::SEAM_FRACTION, vertices, indices);
+    return mesh.upload("deckplanks", vertices, indices);
+}
+
+// ---- Phase 60-61: bowed, weathered, deterministically torn sail -----------------------------
+//
+// A 1 x 1 cloth in the xy plane, centred like the original quad.  Its z coordinate
+// is a smooth parabola across the width multiplied by a vertical sine, which pins
+// the cloth to the yard at its top edge and gives it a belly lower down.  The
+// derivatives of that same function give the analytic normal.  Front and back
+// vertices are separate so culling and lighting are correct from either side.
+// Three fixed cells are omitted as worn holes, and the bottom edge uses a fixed
+// jagged table: the result is deterministic in screenshots and needs no texture.
+inline void buildSailGeometry(int cellsX, int cellsY, float belly,
+                              std::vector<Vertex>& vertices,
+                              std::vector<unsigned int>& indices)
+{
+    constexpr float SAIL_PI = 3.14159265358979f;
+    cellsX = std::max(4, cellsX);
+    cellsY = std::max(4, cellsY);
+    vertices.clear(); indices.clear();
+    const int row = cellsX + 1;
+    const glm::vec3 shades[4] = {
+        glm::vec3(0.52f, 0.48f, 0.39f), glm::vec3(0.65f, 0.60f, 0.49f),
+        glm::vec3(0.57f, 0.52f, 0.43f), glm::vec3(0.70f, 0.64f, 0.52f)
+    };
+    for (int face = 0; face < 2; ++face) {
+        const float sign = face == 0 ? 1.0f : -1.0f;
+        for (int y = 0; y <= cellsY; ++y) {
+            const float v = static_cast<float>(y) / static_cast<float>(cellsY);
+            for (int x = 0; x <= cellsX; ++x) {
+                const float u = static_cast<float>(x) / static_cast<float>(cellsX);
+                float py = 0.5f - v;
+                if (y == cellsY) {
+                    static const float JAG[8] = { 0.00f, 0.045f, 0.012f, 0.070f, 0.018f, 0.055f, 0.008f, 0.035f };
+                    py += JAG[x & 7];
+                }
+                const float q = 2.0f * u - 1.0f;
+                const float wave = std::sin(SAIL_PI * v);
+                const float pz = belly * (1.0f - q * q) * wave;
+                const float dzdu = -4.0f * belly * q * wave;
+                const float dzdv = belly * (1.0f - q * q) * SAIL_PI * std::cos(SAIL_PI * v);
+                glm::vec3 n = glm::normalize(glm::vec3(-dzdu, dzdv, 1.0f)) * sign;
+                vertices.push_back({ glm::vec3(u - 0.5f, py, pz), n,
+                                     shades[(x + 2 * y) & 3] });
+            }
+        }
+    }
+    const int faceVertices = row * (cellsY + 1);
+    const auto hole = [cellsX, cellsY](int x, int y) {
+        return (x == cellsX / 3 && y == cellsY / 2)
+            || (x == (2 * cellsX) / 3 && y == cellsY / 3)
+            || (x == cellsX / 2 && y == (2 * cellsY) / 3);
+    };
+    for (int face = 0; face < 2; ++face) {
+        const unsigned int off = static_cast<unsigned int>(face * faceVertices);
+        for (int y = 0; y < cellsY; ++y) for (int x = 0; x < cellsX; ++x) {
+            if (hole(x, y)) continue;
+            const unsigned int a = off + static_cast<unsigned int>(y * row + x);
+            const unsigned int b = a + 1u, d = a + static_cast<unsigned int>(row), c = d + 1u;
+            if (face == 0) {
+                indices.insert(indices.end(), { a, d, c, a, c, b });
+            } else {
+                indices.insert(indices.end(), { a, c, d, a, b, c });
+            }
+        }
+    }
+}
+
+inline bool makeSail(Mesh& mesh, int cellsX = 12, int cellsY = 10, float belly = 0.12f)
+{
+    std::vector<Vertex> vertices;
+    std::vector<unsigned int> indices;
+    buildSailGeometry(cellsX, cellsY, belly, vertices, indices);
+    return mesh.upload("sail", vertices, indices);
 }

@@ -218,7 +218,7 @@ same size. Phase 33's Demo A relies on being able to make the ocean coarse
 The quad faces `+Z`, standing upright like a panel. The grid faces `+Y`, lying
 flat like a floor. They are not interchangeable, and the choice is forced:
 
-**This mesh is the sea.** In Phase 40 the wave displaces each vertex's `y` from
+**This mesh is the sea.** In Phase 81 the wave displaces each vertex's `y` from
 functions of its `x` and `z`:
 
 ```text
@@ -227,7 +227,7 @@ y = waveHeight(x, z, t)
 
 So the grid's two varying coordinates have to be `x` and `z`, with `y` free to
 be pushed up and down. Building it upright now would mean rebuilding it then,
-and Phase 41's analytic normals would have to be rederived in a different plane.
+and Phase 82's analytic normals would have to be rederived in a different plane.
 
 It also means the two flat generators demonstrate two different normals, which is
 why pressing `N` is a genuine test of both rather than a test of one.
@@ -392,7 +392,7 @@ produces the identical 1 x 1 footprint.
 
 ### Why does the grid lie flat when the quad stands up?
 
-Because this mesh becomes the sea. Phase 40 displaces each vertex's `y` from
+Because this mesh becomes the sea. Phase 81 displaces each vertex's `y` from
 functions of `x` and `z`, so `x` and `z` have to be the two coordinates that vary
 and `y` has to be free. Building it upright would mean rebuilding it then.
 
@@ -496,8 +496,8 @@ Phase 18 passes when:
 ## What is not part of Phase 18
 
 No waves: the grid is perfectly flat, and `uIsOcean`, `waveHeight` and the GPU
-displacement are Phase 40. No analytic normals - every normal is `(0, 1, 0)`,
-and Phase 41 is where the wave's slope makes them vary. No runtime change of
+displacement are Phase 81. No analytic normals - every normal is `(0, 1, 0)`,
+and Phase 82 is where the wave's slope makes them vary. No runtime change of
 `CELLS`: the `+` and `-` keys that rebuild meshes live are Phase 25, so `CELLS`
 is still a value you edit and rebuild. No cylinder or sphere (Phases 20-22). No
 lighting, and no material - the grid's colours are still per-vertex.
